@@ -14,11 +14,11 @@ class LSTM2dCell(nn.Module):
         # previous vertical hidden state to state
         self.V = nn.Linear(self.state_dim, self.state_dim * 5)
 
-    def forward(self, xj, y_prev, s_horizontal, s_vertical, c_horizontal, c_vertical):
+    def forward(self, xj, s_horizontal, s_vertical, c_horizontal, c_vertical):
         """
         Forward pass of the 2d-LSTM Cell at horizontal step j and vertical step i (to compute c_ji and s_ji)
+
         :param xj: input at horizontal step j
-        :param y_prev: decoder output from previous vertical step i-1
         :param s_horizontal: hidden state of cell at previous horizontal step j-1, same vertical step i
         :param s_vertical: hidden state of cell at previous vertical step i-1, same horizontal step j
         :param c_horizontal: cell state of cell at previous horizontal step j-1, same vertical step i
