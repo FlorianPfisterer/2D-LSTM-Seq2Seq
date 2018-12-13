@@ -5,7 +5,11 @@ from model.lstm2d_cell import LSTM2dCell
 
 class LSTM2d(nn.Module):
     """
-    2d-LSTM network
+    2D-LSTM sequence-to-sequence (2D-seq2seq) model.
+    Based on the paper
+        "Towards two-dimensional sequence to sequence model in neural machine translation."
+        Bahar, Parnia, Christopher Brix, and Hermann Ney
+        arXiv preprint arXiv:1810.03975 (2018)
 
     Args:
         embed_dim: dimension of embedding vectors
@@ -63,7 +67,7 @@ class LSTM2d(nn.Module):
 
     def __inference_forward(self, h):
         """
-        Naive O(n^2) implementation of the 2d-LSTM forward propagation
+        Naive O(n^2) implementation of the 2d-LSTM forward pass at inference time.
         Args:
             h: (max_input_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
 
