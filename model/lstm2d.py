@@ -37,7 +37,7 @@ class LSTM2d(nn.Module):
 
         # final softmax layer for next predicted token
         self.logits = nn.Linear(in_features=state_dim_2d, out_features=vocab_size)
-        self.softmax = nn.Softmax(dim=vocab_size)
+        self.softmax = nn.Softmax(dim=-1)    # inputs will be of shape (max_output_len x batch x vocab_size) => last dim
 
         # the encoder LSTM goes over the input sequence x and provides the hidden states h_j for the 2d-LSTM
         self.encoder = nn.LSTM(input_size=embed_dim, hidden_size=encoder_state_dim, bidirectional=True)
@@ -58,7 +58,7 @@ class LSTM2d(nn.Module):
         h = self.__encoder_lstm(x)
 
         if self.training and y is not None:
-            return self.__training_forward(x, y)
+            return self.__training_forward(h, y)
         else:
             return self.__inference_forward(h)
 
