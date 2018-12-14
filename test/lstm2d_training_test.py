@@ -3,9 +3,9 @@ import torch
 from model.lstm2d import LSTM2d
 
 
-class LSTM2dInferenceTest(TestCase):
+class LSTM2dTrainingTest(TestCase):
     """
-    Unit tests for the 2D-LSTM in inference mode.
+    Unit tests for the 2D-LSTM in training mode.
     """
     embed_dim = 50
     encoder_state_dim = 20
@@ -31,10 +31,11 @@ class LSTM2dInferenceTest(TestCase):
         """
         # random token indices of shape (max_input_len x batch_size)
         sample_x = torch.randint(0, self.vocab_size, (self.max_input_len, self.batch_size), dtype=torch.long)
+        sample_y = torch.randint(0, self.vocab_size, (self.max_output_len, self.batch_size), dtype=torch.long)
 
-        # toy inference
-        self.lstm.eval()
-        pred = self.lstm.forward(x=sample_x, y=None)
+        # toy training
+        self.lstm.train()
+        pred = self.lstm.forward(x=sample_x, y=sample_y)
 
         pred_shape = list(pred.shape)
         self.assertEqual(pred_shape, [self.max_output_len, self.batch_size, self.vocab_size],
@@ -46,9 +47,10 @@ class LSTM2dInferenceTest(TestCase):
         the elements are in [0, 1] and sum to 1.
         """
         sample_x = torch.randint(0, self.vocab_size, (self.max_input_len, self.batch_size), dtype=torch.long)
+        sample_y = torch.randint(0, self.vocab_size, (self.max_output_len, self.batch_size), dtype=torch.long)
 
-        self.lstm.eval()
-        pred = self.lstm.forward(x=sample_x, y=None)    # shape (max_output_len x batch_size x vocab_size)
+        self.lstm.train()
+        pred = self.lstm.forward(x=sample_x, y=sample_y)    # shape (max_output_len x batch_size x vocab_size)
 
         # check [0, 1] range
         self.assertTrue(torch.max(pred) <= 1.0, 'Softmax distribution contains values > 1.')
@@ -65,10 +67,12 @@ class LSTM2dInferenceTest(TestCase):
         Tests if the outputs of the 2D-LSTM are the same over the batch if the same input is fed in multiple times.
         """
         repeated_x = torch.tensor([0, 1, 2, 0], dtype=torch.long)
+        repeated_y = torch.tensor([0, 2, 0, 1, 2], dtype=torch.long)
         batch_x = repeated_x.expand(self.batch_size, self.max_input_len).t()
+        batch_y = repeated_y.expand(self.batch_size, self.max_output_len).t()
 
-        self.lstm.eval()
-        pred = self.lstm.forward(x=batch_x, y=None)     # shape (max_output_len x batch_size x vocab_size)
+        self.lstm.train()
+        pred = self.lstm.forward(x=batch_x, y=batch_y)     # shape (max_output_len x batch_size x vocab_size)
 
         pred_first = pred[:, 0, :]
         pred_expected = pred_first.expand(self.batch_size, self.max_output_len, self.vocab_size).permute(1, 0, 2)

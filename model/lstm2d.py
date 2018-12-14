@@ -57,7 +57,8 @@ class LSTM2d(nn.Module):
         """
         h = self.__encoder_lstm(x)
 
-        if self.training and y is not None:
+        if self.training:
+            assert y is not None, 'You must supply the correct tokens in training mode.'
             return self.__training_forward(h, y)
         else:
             return self.__inference_forward(h)
