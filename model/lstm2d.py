@@ -109,10 +109,10 @@ class LSTM2d(nn.Module):
             x_current = torch.cat([h_current, y_current], dim=-1)   # shape (batch*(ver_to-ver_from) x input_dim)
 
             # calculate previous hidden & cell states for this diagonal
-            s_prev_hor = s_diag[hor_from:hor_to, :, :].view(new_batch_size, self.state_dim_2d)
-            s_prev_ver = s_diag[ver_from:ver_to, :, :].view(new_batch_size, self.state_dim_2d)
-            c_prev_hor = c_diag[hor_from:hor_to, :, :].view(new_batch_size, self.state_dim_2d)
-            c_prev_ver = c_diag[ver_from:ver_to, :, :].view(new_batch_size, self.state_dim_2d)
+            s_prev_hor = s_diag[hor_from:hor_to, :, :].clone().view(new_batch_size, self.state_dim_2d)
+            s_prev_ver = s_diag[ver_from:ver_to, :, :].clone().view(new_batch_size, self.state_dim_2d)
+            c_prev_hor = c_diag[hor_from:hor_to, :, :].clone().view(new_batch_size, self.state_dim_2d)
+            c_prev_ver = c_diag[ver_from:ver_to, :, :].clone().view(new_batch_size, self.state_dim_2d)
 
             # run batched computation for this diagonal
             c_next, s_next = self.cell2d.forward(x_current, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
