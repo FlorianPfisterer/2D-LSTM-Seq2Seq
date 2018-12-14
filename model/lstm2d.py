@@ -52,7 +52,7 @@ class LSTM2d(nn.Module):
             y (only if training): (max_output_len x batch) correct output tokens (indices in range [0, vocab_size))
 
         Returns:
-            y_hat: (max_output_len x batch x vocab_size)
+            y_pred: (max_output_len x batch x vocab_size)
                 predicted output sequence (softmax distribution over vocab_size)
         """
         h = self.__encoder_lstm(x)
@@ -75,7 +75,7 @@ class LSTM2d(nn.Module):
             y: (max_output_len x batch) correct output tokens (indices in range [0, vocab_size))
 
         Returns:
-            y_hat: (max_output_len x batch x vocab_size)
+            y_pred: (max_output_len x batch x vocab_size)
                 predicted output sequence (softmax distribution over vocab_size)
         """
         # obtain embedding representations for the correct tokens
@@ -84,12 +84,62 @@ class LSTM2d(nn.Module):
         min_len = min(self.max_output_len, self.max_input_len)
         max_len = max(self.max_output_len, self.max_input_len)
 
-        # number of cells computed concurrently, currently (length of the diagonal)
-        width = 1           # will be 1 2 3 ... min_len ... min_len ... min_len-1 min_len-2 ... 3 2 1
+        batch_size = h.size()[1]
+
+        # store hidden and cell states from the latest previous diagonals, at the beginning filled with zeros
+        s_diag = torch.zeros(max_len, batch_size, self.state_dim_2d)
+        c_diag = torch.zeros(max_len, batch_size, self.state_dim_2d)
+
+        # if the bigger dimension is the input dimension, we need to store the hidden states from the last cells
+        # in the last diagonals (from diagonal_num = max_input_len-1 to the last one)
+        needs_to_store_cell_states_separately = max_len != min_len and max_len == self.max_input_len
+        if needs_to_store_cell_states_separately:
+            output_hidden_states = torch.zeros(self.max_output_len, batch_size, self.state_dim_2d)
 
         for diagonal_num in range(min_len + max_len - 1):
-            (h_from, h_to), (y_from, y_to) = self.__calculate_input_ranges(diagonal_num)
-            # TODO WIP
+            (ver_from, ver_to), (hor_from, hor_to) = self.__calculate_input_ranges(diagonal_num=0)
+            diagonal_len = ver_to - ver_from  # (always == hor_to - hor_from)
+
+            # calculate x input for this diagonal
+            # treat diagonal as batches and reshape inputs accordingly
+            new_batch_size = diagonal_len * batch_size
+            h_current = h[ver_from:ver_to, :, :].view(new_batch_size, h.size()[-1])
+            y_current = y_emb[hor_from:hor_to, :, :].view(new_batch_size, y_emb.size()[-1])
+            x_current = torch.cat([h_current, y_current], dim=-1)   # shape (batch*(ver_to-ver_from) x input_dim)
+
+            # calculate previous hidden & cell states for this diagonal
+            s_prev_hor = s_diag[hor_from:hor_to, :, :].view(new_batch_size, self.state_dim_2d)
+            s_prev_ver = s_diag[ver_from:ver_to, :, :].view(new_batch_size, self.state_dim_2d)
+            c_prev_hor = c_diag[hor_from:hor_to, :, :].view(new_batch_size, self.state_dim_2d)
+            c_prev_ver = c_diag[ver_from:ver_to, :, :].view(new_batch_size, self.state_dim_2d)
+
+            # run batched computation for this diagonal
+            c_next, s_next = self.cell2d.forward(x_current, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
+
+            # separate batch and diagonal_len again so we can store them accordingly
+            c_next = c_next.view(diagonal_len, batch_size, self.state_dim_2d)
+            s_next = s_next.view(diagonal_len, batch_size, self.state_dim_2d)
+
+            # store new hidden and cell states at the right indices for the next diagonal(s) to use
+            (max_from, max_to) = (ver_from, ver_to) if max_len == self.max_output_len else (hor_from, hor_to)
+            s_diag[max_from:max_to, :, :] = s_next[:, :, :]
+            c_diag[max_from:max_to, :, :] = c_next[:, :, :]
+
+            if needs_to_store_cell_states_separately and diagonal_num >= max_len - 1:
+                # store the last hidden state of this diagonal for the output prediction (later)
+                output_hidden_states[diagonal_num - (max_len - 1), :, :] = s_diag[-1, :, :]
+
+        # now compute the predicted outputs based on the hidden states (stored separately or in s_diag)
+        if needs_to_store_cell_states_separately:
+            states_for_pred = output_hidden_states
+        else:
+            states_for_pred = s_diag[:, :, :]
+        assert list(states_for_pred.shape) == [self.max_output_len, batch_size, self.state_dim_2d]
+
+        y_pred = self.logits.forward(states_for_pred)
+        y_pred = self.softmax.forward(y_pred)
+
+        return y_pred
 
     def __inference_forward(self, h):
         """
@@ -98,7 +148,7 @@ class LSTM2d(nn.Module):
             h: (max_input_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
 
         Returns:
-            y_hat: (max_output_len x batch x vocab_size)
+            y_pred: (max_output_len x batch x vocab_size)
                 predicted output sequence (softmax distribution over vocab_size)
         """
         batch_size = h.size()[1]
@@ -109,7 +159,7 @@ class LSTM2d(nn.Module):
         c_prev_i = torch.zeros(self.max_input_len, batch_size, self.state_dim_2d)
 
         # result tensor
-        y_hat = torch.empty(self.max_output_len, batch_size, self.vocab_size)
+        y_pred = torch.empty(self.max_output_len, batch_size, self.vocab_size)
 
         # go through each decoder output step
         for i in range(self.max_output_len):
@@ -120,7 +170,7 @@ class LSTM2d(nn.Module):
             for j in range(self.max_input_len):
                 # input to 2d-cell is concatenation of encoder hidden state h_j and last generated token y_i
                 h_j = h[j, :, :]
-                x_j = torch.cat([y_i, h_j], dim=1)
+                x_j = torch.cat([y_i, h_j], dim=-1)
 
                 s_prev_ver = s_prev_i[j, :, :]
                 c_prev_ver = c_prev_i[j, :, :]
@@ -128,15 +178,14 @@ class LSTM2d(nn.Module):
                 c_prev_hor, s_prev_hor = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
 
             # obtain next predicted token
-            s_Ji = s_prev_hor   # final hidden state at this vertical step i
             y_pred_i = self.logits.forward(s_prev_hor)
             y_pred_i = self.softmax.forward(y_pred_i)
-            y_hat[i, :, :] = y_pred_i
+            y_pred[i, :, :] = y_pred_i
 
             # next generated token embedding (TODO beam seach?)
             y_i = self.embedding.forward(torch.argmax(y_pred_i, dim=1))
 
-        return y_hat
+        return y_pred
 
     def __encoder_lstm(self, x):
         """
