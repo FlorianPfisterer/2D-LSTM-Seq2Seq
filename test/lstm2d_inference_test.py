@@ -16,28 +16,30 @@ class LSTM2dInferenceTest(TestCase):
     max_input_len = 4
     max_output_len = 5
 
-    vocab_size = 3
+    input_vocab_size = 3
+    output_vocab_size = 5
 
     def setUp(self):
         torch.manual_seed(42)
 
         self.lstm = LSTM2d(embed_dim=self.embed_dim, state_dim_2d=self.cell_state_dim,
                            encoder_state_dim=self.encoder_state_dim, max_input_len=self.max_input_len,
-                           max_output_len=self.max_output_len, vocab_size=self.vocab_size)
+                           max_output_len=self.max_output_len, input_vocab_size=self.input_vocab_size,
+                           output_vocab_size=self.output_vocab_size)
 
     def test_dimensions(self):
         """
         Tests if the input and output dimensions of the 2D-LSTM are as expected.
         """
         # random token indices of shape (max_input_len x batch_size)
-        sample_x = torch.randint(0, self.vocab_size, (self.max_input_len, self.batch_size), dtype=torch.long)
+        sample_x = torch.randint(0, self.input_vocab_size, (self.max_input_len, self.batch_size), dtype=torch.long)
 
         # toy inference
         self.lstm.eval()
         pred = self.lstm.forward(x=sample_x, y=None)
 
         pred_shape = list(pred.shape)
-        self.assertEqual(pred_shape, [self.max_output_len, self.batch_size, self.vocab_size],
+        self.assertEqual(pred_shape, [self.max_output_len, self.batch_size, self.output_vocab_size],
                          'The predictions have an unexpected shape.')
 
     def test_valid_softmax(self):
@@ -45,7 +47,7 @@ class LSTM2dInferenceTest(TestCase):
         Tests if the output predictions of the 2D-LSTM form a valid softmax distribution over the vocabulary, i.e.
         the elements are in [0, 1] and sum to 1.
         """
-        sample_x = torch.randint(0, self.vocab_size, (self.max_input_len, self.batch_size), dtype=torch.long)
+        sample_x = torch.randint(0, self.input_vocab_size, (self.max_input_len, self.batch_size), dtype=torch.long)
 
         self.lstm.eval()
         pred = self.lstm.forward(x=sample_x, y=None)    # shape (max_output_len x batch_size x vocab_size)
@@ -71,6 +73,6 @@ class LSTM2dInferenceTest(TestCase):
         pred = self.lstm.forward(x=batch_x, y=None)     # shape (max_output_len x batch_size x vocab_size)
 
         pred_first = pred[:, 0, :]
-        pred_expected = pred_first.expand(self.batch_size, self.max_output_len, self.vocab_size).permute(1, 0, 2)
+        pred_expected = pred_first.expand(self.batch_size, self.max_output_len, self.output_vocab_size).permute(1, 0, 2)
 
         self.assertTrue(torch.allclose(pred, pred_expected), 'Predictions vary across same-input batch.')

@@ -18,11 +18,15 @@ class LSTM2d(nn.Module):
         encoder_state_dim: dimension of the hidden / cell state of the bidirectional encoder LSTM
         max_input_len: maximum input sequence length
         max_output_len: maximum output sequence length
-        vocab_size: size of the vocabulary (i.e. number of embedding vectors)
+
+        input_vocab_size: size of the input vocabulary (i.e. number of embedding vectors in the source language)
+        output_vocab_size: size of the output vocabulary (i.e. number of embedding vectors in the target language)
     """
     __start_token = 0
 
-    def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, max_input_len, max_output_len, vocab_size):
+    def __init__(self, embed_dim, state_dim_2d, encoder_state_dim,
+                 max_input_len, max_output_len,
+                 input_vocab_size, output_vocab_size):
         super(LSTM2d, self).__init__()
 
         self.embed_dim = embed_dim
@@ -30,16 +34,18 @@ class LSTM2d(nn.Module):
         self.encoder_state_dim = encoder_state_dim
         self.max_input_len = max_input_len
         self.max_output_len = max_output_len
-        self.vocab_size = vocab_size
+        self.input_vocab_size = input_vocab_size
+        self.output_vocab_size = output_vocab_size
 
-        self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=embed_dim)
+        self.input_embedding = nn.Embedding(num_embeddings=input_vocab_size, embedding_dim=embed_dim)
+        self.output_embedding = nn.Embedding(num_embeddings=output_vocab_size, embedding_dim=embed_dim)
 
         # input to the 2d-cell is a concatenation of the hidden encoder states h_j and the embedded output tokens y_i-1
         cell_input_dim = 2*encoder_state_dim + embed_dim    # 2*encoder_state_dim since it's bidirectional
         self.cell2d = LSTM2dCell(cell_input_dim, state_dim_2d)
 
         # final softmax layer for next predicted token
-        self.logits = nn.Linear(in_features=state_dim_2d, out_features=vocab_size)
+        self.logits = nn.Linear(in_features=state_dim_2d, out_features=output_vocab_size)
         self.softmax = nn.Softmax(dim=-1)    # inputs will be of shape (max_output_len x batch x vocab_size) => last dim
 
         # the encoder LSTM goes over the input sequence x and provides the hidden states h_j for the 2d-LSTM
@@ -54,8 +60,8 @@ class LSTM2d(nn.Module):
             y (only if training): (max_output_len x batch) correct output tokens (indices in range [0, vocab_size))
 
         Returns:
-            y_pred: (max_output_len x batch x vocab_size)
-                predicted output sequence (softmax distribution over vocab_size)
+            y_pred: (max_output_len x batch x output_vocab_size)
+                predicted output sequence (softmax distribution over output_vocab_size)
         """
         h = self.__encoder_lstm(x)
 
@@ -78,15 +84,15 @@ class LSTM2d(nn.Module):
             y: (max_output_len x batch) correct output tokens (indices in range [0, vocab_size))
 
         Returns:
-            y_pred: (max_output_len x batch x vocab_size)
-                predicted output sequence (softmax distribution over vocab_size)
+            y_pred: (max_output_len x batch x output_vocab_size)
+                predicted output sequence (softmax distribution over output_vocab_size)
         """
         batch_size = h.size()[1]
 
         # obtain embedding representations for the correct tokens, shift by one token (add start token)
         start_tokens = torch.tensor([self.__start_token], dtype=y.dtype).repeat(batch_size, 1).t()
         y = torch.cat([start_tokens, y[:-1, :]], dim=0)
-        y_emb = self.embedding.forward(y)   # (max_output_len x batch x embed_dim)
+        y_emb = self.output_embedding.forward(y)   # (max_output_len x batch x embed_dim)
 
         min_len = min(self.max_output_len, self.max_input_len)
         max_len = max(self.max_output_len, self.max_input_len)
@@ -149,26 +155,26 @@ class LSTM2d(nn.Module):
     def __inference_forward(self, h):
         """
         Naive O(max_input_len * max_output_len) implementation of the 2D-LSTM forward pass at inference time.
-        
+
         Args:
             h: (max_input_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
 
         Returns:
-            y_pred: (max_output_len x batch x vocab_size)
-                predicted output sequence (softmax distribution over vocab_size)
+            y_pred: (max_output_len x batch x output_vocab_size)
+                predicted output sequence (softmax distribution over output_vocab_size)
         """
         batch_size = h.size()[1]
 
         # initialize y to (embedded) start tokens
         y_i = torch.tensor([self.__start_token], dtype=torch.long).repeat(batch_size)
-        y_i = self.embedding.forward(y_i)
+        y_i = self.output_embedding.forward(y_i)
 
         # hidden states and cell states at previous vertical step i-1
         s_prev_i = torch.zeros(self.max_input_len, batch_size, self.state_dim_2d)
         c_prev_i = torch.zeros(self.max_input_len, batch_size, self.state_dim_2d)
 
         # result tensor
-        y_pred = torch.empty(self.max_output_len, batch_size, self.vocab_size)
+        y_pred = torch.empty(self.max_output_len, batch_size, self.output_vocab_size)
 
         # go through each decoder output step
         for i in range(self.max_output_len):
@@ -192,7 +198,7 @@ class LSTM2d(nn.Module):
             y_pred[i, :, :] = y_pred_i
 
             # next generated token embedding (TODO beam seach?)
-            y_i = self.embedding.forward(torch.argmax(y_pred_i, dim=1))
+            y_i = self.output_embedding.forward(torch.argmax(y_pred_i, dim=1))
 
         return y_pred
 
@@ -200,14 +206,13 @@ class LSTM2d(nn.Module):
         """
         Runs the bidirectional encoder LSTM on the input sequence to obtain the hidden states h_j.
         Args:
-            x: (max_input_len x batch) input tokens
+            x: (max_input_len x batch) input tokens (indices in range [0, input_vocab_size))
 
         Returns:
             h: (max_input_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
         """
-
-        embedded_x = self.embedding.forward(x)      # (max_input_len x batch x embed_dim)
-        h, _ = self.encoder.forward(embedded_x)     # (max_input_len x batch x 2*encoder_state_dim)
+        embedded_x = self.input_embedding.forward(x)      # (max_input_len x batch x embed_dim)
+        h, _ = self.encoder.forward(embedded_x)           # (max_input_len x batch x 2*encoder_state_dim)
 
         return h
 

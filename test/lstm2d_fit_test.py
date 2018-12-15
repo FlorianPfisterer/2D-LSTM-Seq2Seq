@@ -20,7 +20,8 @@ class LSTM2dFitTest(TestCase):
         torch.manual_seed(42)
         self.lstm = LSTM2d(embed_dim=self.embed_dim, state_dim_2d=self.cell_state_dim,
                            encoder_state_dim=self.encoder_state_dim, max_input_len=self.max_input_len,
-                           max_output_len=self.max_output_len, vocab_size=self.vocab_size)
+                           max_output_len=self.max_output_len, input_vocab_size=self.vocab_size,
+                           output_vocab_size=self.vocab_size)
 
     def test_fits_small_dataset(self):
         """
