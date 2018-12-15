@@ -45,7 +45,7 @@ class LSTM2d(nn.Module):
         # the encoder LSTM goes over the input sequence x and provides the hidden states h_j for the 2d-LSTM
         self.encoder = nn.LSTM(input_size=embed_dim, hidden_size=encoder_state_dim, bidirectional=True)
 
-    def forward(self, x, y):
+    def forward(self, x, y=None):
         """
         Runs the complete forward propagation for the 2d-LSTM, using two different implementations for training
         and inference.
@@ -69,7 +69,7 @@ class LSTM2d(nn.Module):
         """
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
         advance.
-        Processes the input in a linear-time diagonal-wise fashion, as described in the paper
+        Processes the input in a diagonal-wise fashion, as described in the paper
             Handwriting Recognition with Large Multidimensional Long Short-Term Memory Recurrent Neural Networks
             by Voigtlaender et. al.
 
@@ -148,7 +148,8 @@ class LSTM2d(nn.Module):
 
     def __inference_forward(self, h):
         """
-        Naive O(n^2) implementation of the 2D-LSTM forward pass at inference time.
+        Naive O(max_input_len * max_output_len) implementation of the 2D-LSTM forward pass at inference time.
+        
         Args:
             h: (max_input_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
 

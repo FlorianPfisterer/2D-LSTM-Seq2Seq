@@ -5,7 +5,7 @@ from model.lstm2d import LSTM2d
 
 class LSTM2dFitTest(TestCase):
     """
-    Unit tests for the 2D-LSTM in inference mode.
+    Unit tests to ensure the 2D-LSTM can learn something (fit a dataset).
     """
     embed_dim = 4
     encoder_state_dim = 4
