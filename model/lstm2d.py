@@ -20,6 +20,8 @@ class LSTM2d(nn.Module):
         max_output_len: maximum output sequence length
         vocab_size: size of the vocabulary (i.e. number of embedding vectors)
     """
+    __start_token = 0
+
     def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, max_input_len, max_output_len, vocab_size):
         super(LSTM2d, self).__init__()
 
@@ -79,13 +81,15 @@ class LSTM2d(nn.Module):
             y_pred: (max_output_len x batch x vocab_size)
                 predicted output sequence (softmax distribution over vocab_size)
         """
-        # obtain embedding representations for the correct tokens
+        batch_size = h.size()[1]
+
+        # obtain embedding representations for the correct tokens, shift by one token (add start token)
+        start_tokens = torch.tensor([self.__start_token], dtype=y.dtype).repeat(batch_size, 1).t()
+        y = torch.cat([start_tokens, y[:-1, :]], dim=0)
         y_emb = self.embedding.forward(y)   # (max_output_len x batch x embed_dim)
 
         min_len = min(self.max_output_len, self.max_input_len)
         max_len = max(self.max_output_len, self.max_input_len)
-
-        batch_size = h.size()[1]
 
         # store hidden and cell states from the latest previous diagonals, at the beginning filled with zeros
         s_diag = torch.zeros(max_len, batch_size, self.state_dim_2d)
@@ -106,7 +110,7 @@ class LSTM2d(nn.Module):
             new_batch_size = diagonal_len * batch_size
             h_current = h[ver_from:ver_to, :, :].view(new_batch_size, h.size()[-1])
             y_current = y_emb[hor_from:hor_to, :, :].view(new_batch_size, y_emb.size()[-1])
-            x_current = torch.cat([h_current, y_current], dim=-1)   # shape (batch*(ver_to-ver_from) x input_dim)
+            x_current = torch.cat([h_current, y_current], dim=-1)   # shape (batch*diagonal_len x input_dim)
 
             # calculate previous hidden & cell states for this diagonal
             s_prev_hor = s_diag[hor_from:hor_to, :, :].clone().view(new_batch_size, self.state_dim_2d)
@@ -153,7 +157,10 @@ class LSTM2d(nn.Module):
                 predicted output sequence (softmax distribution over vocab_size)
         """
         batch_size = h.size()[1]
-        y_i = torch.zeros(batch_size, self.embed_dim)    # TODO <start> token?
+
+        # initialize y to (embedded) start tokens
+        y_i = torch.tensor([self.__start_token], dtype=torch.long).repeat(batch_size)
+        y_i = self.embedding.forward(y_i)
 
         # hidden states and cell states at previous vertical step i-1
         s_prev_i = torch.zeros(self.max_input_len, batch_size, self.state_dim_2d)

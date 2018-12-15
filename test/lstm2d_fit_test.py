@@ -2,18 +2,19 @@ from unittest import TestCase
 import torch
 from model.lstm2d import LSTM2d
 
+
 class LSTM2dFitTest(TestCase):
     """
     Unit tests for the 2D-LSTM in inference mode.
     """
-    embed_dim = 2
-    encoder_state_dim = 5
-    cell_state_dim = 3
+    embed_dim = 4
+    encoder_state_dim = 4
+    cell_state_dim = 5
 
     max_input_len = 3
     max_output_len = max_input_len
 
-    vocab_size = 3
+    vocab_size = 5
 
     def setUp(self):
         torch.manual_seed(42)
@@ -25,20 +26,20 @@ class LSTM2dFitTest(TestCase):
         """
         Tests if the model can fit a simple, small, random dataset (i.e. validate that it actually learns something).
         """
-        dataset_size = 4
-        x = torch.randint(0, self.vocab_size, (self.max_input_len, dataset_size), dtype=torch.long)
+        dataset_size = 5
+        x = torch.randint(1, self.vocab_size, (self.max_input_len, dataset_size), dtype=torch.long)
         y = x.clone()   # should learn the identity function
         y_t = y.t()
 
         loss = torch.nn.CrossEntropyLoss()
-        optimizer = torch.optim.Adam(self.lstm.parameters(), lr=0.1)
+        optimizer = torch.optim.Adam(self.lstm.parameters(), lr=0.01)
 
         self.lstm.train()
 
         initial_loss = -1
         last_loss = -1
-        for _ in range(200):
-            y_pred = self.lstm.forward(x, y).permute(1, 0, 2)
+        for _ in range(100):
+            y_pred = self.lstm.forward(x, y).permute(1, 2, 0)   # convert to shape (batch x vocab_size x max_output_len)
             loss_value = loss(y_pred, y_t)
 
             last_loss = loss_value.item()
