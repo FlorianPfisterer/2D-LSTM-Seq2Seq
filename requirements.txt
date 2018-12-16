@@ -1,3 +1,7 @@
 torch
+torchtext
 numpy
 unittest
+nltk
+pandas
+sklearn
