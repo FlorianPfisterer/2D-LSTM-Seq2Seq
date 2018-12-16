@@ -1,9 +1,12 @@
 from nltk import word_tokenize
+import nltk
 import pandas as pd
 from torchtext.data import Field, TabularDataset
 from typing import List, Tuple
 from collections import namedtuple
 from sklearn.model_selection import train_test_split
+import os
+# nltk.download('punkt')
 
 """
 Helper functions to load a toy NMT dataset from http://www.manythings.org/anki/
@@ -14,6 +17,7 @@ Based on:
         /how-to-use-torchtext-for-neural-machine-translation-plus-hack-to-make-it-5x-faster-77f3884d95
 """
 
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 Dataset = namedtuple('Dataset', ['src_field', 'target_field', 'train', 'val'])
 
 
@@ -28,12 +32,12 @@ def load_dataset(src: str, target: str) -> Tuple[List[str], List[str]]:
     return src_sentences, target_sentences
 
 
-def create_fields(src: str, target: str) -> Tuple[Field, Field]:
+def create_fields() -> Tuple[Field, Field]:
     def tokenize_src(sentence: str):
-        return [tok.text for tok in word_tokenize(sentence, language=src)]
+        return word_tokenize(sentence)
 
     def tokenize_target(sentence: str):
-        return [tok.text for tok in word_tokenize(sentence, language=target)]
+        return word_tokenize(sentence)
 
     src_field = Field(tokenize=tokenize_src, init_token='<sos>', eos_token='<eos>')
     target_field = Field(tokenize=tokenize_target, init_token='<sos>', eos_token='<eos>')
@@ -69,11 +73,11 @@ def save_train_test_dataset(src: str, target: str, test_size: float = 0.1) -> No
 
 
 def create_dataset(src: str, target: str) -> Dataset:
-    src_field, target_field = create_fields(src, target)
+    src_field, target_field = create_fields()
     data_fields = [(src, src_field), (target, target_field)]
 
-    train_path = 'train_{}-{}.csv'.format(src, target)
-    val_path = 'val_{}-{}.csv'.format(src, target)
+    train_path = ROOT_DIR + '/train_{}-{}.csv'.format(src, target)
+    val_path = ROOT_DIR + '/val_{}-{}.csv'.format(src, target)
     train, val = TabularDataset.splits(path='./', train=train_path, validation=val_path, format='csv',
                                        fields=data_fields)
 

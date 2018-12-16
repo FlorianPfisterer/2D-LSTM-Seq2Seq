@@ -23,8 +23,7 @@ class LSTM2dTrainingTest(TestCase):
         torch.manual_seed(42)
 
         self.lstm = LSTM2d(embed_dim=self.embed_dim, state_dim_2d=self.cell_state_dim,
-                           encoder_state_dim=self.encoder_state_dim, max_input_len=self.max_input_len,
-                           max_output_len=self.max_output_len, input_vocab_size=self.input_vocab_size,
+                           encoder_state_dim=self.encoder_state_dim, input_vocab_size=self.input_vocab_size,
                            output_vocab_size=self.output_vocab_size)
 
     def test_dimensions(self):
