@@ -4,12 +4,12 @@ from model.lstm2d import LSTM2d
 import torch
 import numpy as np
 
-BATCH_SIZE = 32
+BATCH_SIZE = 128
 EPOCHS = 1
 
-EMBED_DIM = 50
-ENCODER_STATE_DIM = 50
-STATE_DIM_2D = 30
+EMBED_DIM = 100
+ENCODER_STATE_DIM = 64
+STATE_DIM_2D = 128
 
 
 def main():
