@@ -89,10 +89,11 @@ class LSTM2d(nn.Module):
         input_seq_len = h.size()[0]
         output_seq_len = y.size()[0]
 
-        # obtain embedding representations for the correct tokens, shift by one token (add start token)
+        # obtain embedding representations for the correct tokens
+        # shift by one token (add <sos> token at the beginning of the sentences and remove <eos> token at the end)
         start_tokens = torch.tensor([self.bos_token], dtype=y.dtype).repeat(batch_size, 1).t()
         y = torch.cat([start_tokens, y[:-1, :]], dim=0)
-        y_emb = self.output_embedding.forward(y)   # (max_output_len x batch x embed_dim)
+        y_emb = self.output_embedding.forward(y)   # (output_seq_len x batch x embed_dim)
 
         min_len = min(input_seq_len, output_seq_len)
         max_len = max(input_seq_len, output_seq_len)

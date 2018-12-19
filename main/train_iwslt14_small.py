@@ -46,7 +46,7 @@ def main():
     loss = torch.nn.CrossEntropyLoss()
 
     train_iter = BucketIterator(dataset.train, batch_size=options.batch_size,
-                                sort_key=lambda x: len(x.src), shuffle=options.shuffle)
+                                sort_key=lambda x: -len(x.src), shuffle=options.shuffle)
 
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
@@ -56,11 +56,13 @@ def main():
 
         for i, batch in enumerate(train_iter):
             optimizer.zero_grad()
+            x = batch.src
+            y = batch.tgt[1:, :]        # remove <sos> token (the net should not generate this)
 
-            y_pred = model.forward(x=batch.src, y=batch.tgt)
+            y_pred = model.forward(x=x, y=y)
             y_pred = y_pred.view(-1, tgt_vocab_size)
 
-            loss_value = loss(y_pred, batch.tgt.view(-1))
+            loss_value = loss(y_pred, y.view(-1))
             loss_history.append(loss_value.item())
 
             loss_value.backward()
