@@ -19,10 +19,12 @@ class LSTM2d(nn.Module):
 
         input_vocab_size: size of the input vocabulary (i.e. number of embedding vectors in the source language)
         output_vocab_size: size of the output vocabulary (i.e. number of embedding vectors in the target language)
-    """
-    __start_token = 0
 
-    def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, input_vocab_size, output_vocab_size):
+        bos_token: the token (index) representing the beginning of a sentence in the output vocabulary
+        eos_token: the token (index) representing the end of a sentence in the output vocabulary
+    """
+    def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, input_vocab_size, output_vocab_size,
+                 bos_token=1, eos_token=2):
         super(LSTM2d, self).__init__()
 
         self.embed_dim = embed_dim
@@ -30,6 +32,8 @@ class LSTM2d(nn.Module):
         self.encoder_state_dim = encoder_state_dim
         self.input_vocab_size = input_vocab_size
         self.output_vocab_size = output_vocab_size
+        self.bos_token = bos_token
+        self.eos_token = eos_token
 
         self.input_embedding = nn.Embedding(num_embeddings=input_vocab_size, embedding_dim=embed_dim)
         self.output_embedding = nn.Embedding(num_embeddings=output_vocab_size, embedding_dim=embed_dim)
@@ -85,10 +89,11 @@ class LSTM2d(nn.Module):
         input_seq_len = h.size()[0]
         output_seq_len = y.size()[0]
 
-        # obtain embedding representations for the correct tokens, shift by one token (add start token)
-        start_tokens = torch.tensor([self.__start_token], dtype=y.dtype).repeat(batch_size, 1).t()
+        # obtain embedding representations for the correct tokens
+        # shift by one token (add <sos> token at the beginning of the sentences and remove <eos> token at the end)
+        start_tokens = torch.tensor([self.bos_token], dtype=y.dtype).repeat(batch_size, 1).t()
         y = torch.cat([start_tokens, y[:-1, :]], dim=0)
-        y_emb = self.output_embedding.forward(y)   # (max_output_len x batch x embed_dim)
+        y_emb = self.output_embedding.forward(y)   # (output_seq_len x batch x embed_dim)
 
         min_len = min(input_seq_len, output_seq_len)
         max_len = max(input_seq_len, output_seq_len)
@@ -164,7 +169,7 @@ class LSTM2d(nn.Module):
         input_seq_len = h.size()[0]
 
         # initialize y to (embedded) start tokens
-        y_i = torch.tensor([self.__start_token], dtype=torch.long).repeat(batch_size)
+        y_i = torch.tensor([self.bos_token], dtype=torch.long).repeat(batch_size)
         y_i = self.output_embedding.forward(y_i)
 
         # hidden states and cell states at previous vertical step i-1
