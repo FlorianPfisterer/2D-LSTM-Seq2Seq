@@ -31,7 +31,7 @@ def main():
     loss = torch.nn.CrossEntropyLoss()
 
     for epoch in range(EPOCHS):
-        total_loss = 0.0
+        loss_values = []
 
         print('Starting training epoch #{}'.format(epoch + 1))
 
@@ -43,19 +43,21 @@ def main():
 
             y_pred = model.forward(x, y).permute(1, 2, 0)
             loss_value = loss(y_pred, y_t)
-            total_loss += loss_value.item()
+            loss_values.append(loss_value.item())
 
             optimizer.zero_grad()
             loss_value.backward()
             optimizer.step()
 
             if i > 0 and not i % 10:
-                print('Loss in batch #{}: {}'.format(i, loss_value))
+                avg_loss = np.mean(loss_values)
+                print('Current average loss (in batch #{}): {}'.format(i, avg_loss))
 
-        print('Loss after epoch #{}: {}'.format(epoch + 1, total_loss))
-        run_validation(model, dataset.val)
+        print('Average loss in epoch #{}: {}'.format(epoch + 1, np.mean(loss_values)))
+        # run_validation(model, dataset.val)
 
 
+"""
 def run_validation(model, val):
     val_iter = BucketIterator(val, batch_size=BATCH_SIZE, sort_key=lambda x: len(x.target), shuffle=True)
 
@@ -78,7 +80,7 @@ def run_validation(model, val):
     mean_acc = np.mean(np.array(accuracies))
     mean_loss = np.mean(np.array(losses))
     print('Validation metrics: mean accuracy = {}, mean loss = {}'.format(mean_acc, mean_loss))
-
+"""
 
 if __name__ == '__main__':
     main()

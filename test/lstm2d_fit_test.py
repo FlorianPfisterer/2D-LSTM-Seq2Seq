@@ -50,5 +50,5 @@ class LSTM2dFitTest(TestCase):
             loss_value.backward()
             optimizer.step()
 
-        print("from {} to {}".format(initial_loss, last_loss))
-        self.assertTrue(last_loss < initial_loss, 'The model did not learn anything.')
+        # print("from {} to {}".format(initial_loss, last_loss))
+        self.assertTrue(last_loss < 0.1 * initial_loss, 'The model did not learn enough.')
