@@ -14,7 +14,7 @@ STATE_DIM_2D = 128
 
 def main():
     dataset = create_dataset('eng', 'deu')
-    train_iter = BucketIterator(dataset.train, batch_size=BATCH_SIZE, sort_key=lambda x: len(x.target), shuffle=True)
+    train_iter = BucketIterator(dataset.train, batch_size=BATCH_SIZE, sort_key=lambda x: len(x.src), shuffle=True)
 
     src_vocab_size = len(dataset.src_field.vocab)           # 16,449
     target_vocab_size = len(dataset.target_field.vocab)     # 32,997

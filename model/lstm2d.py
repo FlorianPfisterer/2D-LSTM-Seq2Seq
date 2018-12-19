@@ -49,11 +49,12 @@ class LSTM2d(nn.Module):
         Runs the complete forward propagation for the 2d-LSTM, using two different implementations for training
         and inference.
         Args:
-            x: (sequence_len x batch) input tokens (indices in range [0, input_vocab_size))
-            y (only if training): (sequence_len x batch) correct output tokens (indices in range [0, output_vocab_size))
+            x: (input_seq_len x batch) input tokens (indices in range [0, input_vocab_size))
+            y (only if training): (output_seq_len x batch) correct output tokens
+                                  (indices in range [0, output_vocab_size))
 
         Returns:
-            y_pred: (sequence_len x batch x output_vocab_size)
+            y_pred: (output_seq_len x batch x output_vocab_size)
                 predicted output sequence (logits for output_vocab_size)
         """
         h = self.__encoder_lstm(x)
@@ -77,7 +78,7 @@ class LSTM2d(nn.Module):
             y: (output_seq_len x batch) correct output tokens (indices in range [0, output_vocab_size))
 
         Returns:
-            y_pred: (sequence_len x batch x output_vocab_size)
+            y_pred: (output_seq_len x batch x output_vocab_size)
                 predicted output sequence (logits for output_vocab_size)
         """
         batch_size = h.size()[1]
@@ -219,7 +220,8 @@ class LSTM2d(nn.Module):
 
         Args:
             diagonal_num: the number of the diagonal, in range [0, input_seq_len + output_seq_len - 1)
-            sequence_len: the length of the sequence (# of tokens) in the current batch
+            input_seq_len: the length of the input sequences (# of tokens) in the current batch
+            output_seq_len: the length of the output sequences (# of tokens) in the current batch
 
         Returns:
             a tuple of two tuples:
