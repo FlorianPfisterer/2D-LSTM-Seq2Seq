@@ -19,6 +19,9 @@ Based on:
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 Dataset = namedtuple('Dataset', ['src', 'tgt', 'train', 'val'])
 
+BOS_TOKEN = '<bos>'
+EOS_TOKEN = '<eos>'
+
 
 def __load_dataset(mode: str = 'train') -> Tuple[List[str], List[str]]:
     """
@@ -42,12 +45,9 @@ def __load_dataset(mode: str = 'train') -> Tuple[List[str], List[str]]:
     return src, tgt
 
 
-def __create_fields(init_token: str, eos_token: str) -> Tuple[Field, Field]:
+def __create_fields() -> Tuple[Field, Field]:
     """
     Creates torchtext-Fields for source and target language
-    Args:
-        init_token: the beginning-of-sentence token (for the target language only)
-        eos_token: the end-of-sentence token (for the target language only)
 
     Returns:
         a tuple of two torchtext.Field s:
@@ -61,7 +61,7 @@ def __create_fields(init_token: str, eos_token: str) -> Tuple[Field, Field]:
         return word_tokenize(sentence)
 
     src_field = Field(tokenize=tokenize_src)
-    tgt_field = Field(tokenize=tokenize_target, init_token=init_token, eos_token=eos_token)
+    tgt_field = Field(tokenize=tokenize_target, init_token=BOS_TOKEN, eos_token=EOS_TOKEN)
 
     return src_field, tgt_field
 
@@ -106,13 +106,10 @@ def save_dataset() -> None:
     __save_dataset_to_csv_if_needed('val')
 
 
-def create_dataset(bos_token: str = '<bos>', eos_token: str = '<eos>') -> Dataset:
+def create_dataset() -> Dataset:
     """
     Creates a Dataset tuple that allows access to vocabularies in src and tgt language as well as the training and
     validation data.
-    Args:
-        bos_token: the beginning-of-sentence token (for the target language only)
-        eos_token: the end-of-sentence token (for the target language only)
 
     Returns:
         a Dataset tuple with the following values:
@@ -123,7 +120,7 @@ def create_dataset(bos_token: str = '<bos>', eos_token: str = '<eos>') -> Datase
     """
     save_dataset()
 
-    src, tgt = __create_fields(bos_token, eos_token)
+    src, tgt = __create_fields()
     data_fields = [('src', src), ('tgt', tgt)]
 
     train, val = TabularDataset.splits(path=ROOT_DIR, train='train.csv', validation='val.csv', format='csv',
