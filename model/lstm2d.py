@@ -38,9 +38,8 @@ class LSTM2d(nn.Module):
         cell_input_dim = 2*encoder_state_dim + embed_dim    # 2*encoder_state_dim since it's bidirectional
         self.cell2d = LSTM2dCell(cell_input_dim, state_dim_2d)
 
-        # final softmax layer for next predicted token
+        # final output layer for next predicted token
         self.logits = nn.Linear(in_features=state_dim_2d, out_features=output_vocab_size)
-        self.softmax = nn.Softmax(dim=-1)    # inputs will be of shape (max_output_len x batch x vocab_size) => last dim
 
         # the encoder LSTM goes over the input sequence x and provides the hidden states h_j for the 2d-LSTM
         self.encoder = nn.LSTM(input_size=embed_dim, hidden_size=encoder_state_dim, bidirectional=True)
@@ -55,7 +54,7 @@ class LSTM2d(nn.Module):
 
         Returns:
             y_pred: (sequence_len x batch x output_vocab_size)
-                predicted output sequence (softmax distribution over output_vocab_size)
+                predicted output sequence (logits for output_vocab_size)
         """
         h = self.__encoder_lstm(x)
 
@@ -79,7 +78,7 @@ class LSTM2d(nn.Module):
 
         Returns:
             y_pred: (sequence_len x batch x output_vocab_size)
-                predicted output sequence (softmax distribution over output_vocab_size)
+                predicted output sequence (logits for output_vocab_size)
         """
         batch_size = h.size()[1]
         input_seq_len = h.size()[0]
@@ -146,8 +145,6 @@ class LSTM2d(nn.Module):
         assert list(states_for_pred.shape) == [output_seq_len, batch_size, self.state_dim_2d]
 
         y_pred = self.logits.forward(states_for_pred)
-        y_pred = self.softmax.forward(y_pred)
-
         return y_pred
 
     def __inference_forward(self, h):
@@ -159,7 +156,7 @@ class LSTM2d(nn.Module):
 
         Returns:
             y_pred: (input_seq_len x batch x output_vocab_size)
-                predicted output sequence (softmax distribution over output_vocab_size)
+                predicted output sequence (logits for output_vocab_size)
                 (generates for the the same length as the input -- input_seq_len)
         """
         batch_size = h.size()[1]
@@ -194,7 +191,6 @@ class LSTM2d(nn.Module):
 
             # obtain next predicted token
             y_pred_i = self.logits.forward(s_prev_hor)
-            y_pred_i = self.softmax.forward(y_pred_i)
             y_pred[i, :, :] = y_pred_i
 
             # next generated token embedding (TODO beam seach?)

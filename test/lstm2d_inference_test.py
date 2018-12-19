@@ -1,4 +1,4 @@
-from unittest import TestCase
+from unittest import TestCase, skip
 import torch
 from model.lstm2d import LSTM2d
 
@@ -42,6 +42,7 @@ class LSTM2dInferenceTest(TestCase):
         self.assertEqual(pred_shape, [self.output_seq_len, self.batch_size, self.output_vocab_size],
                          'The predictions have an unexpected shape.')
 
+    @skip("the 2D-LSTM now outputs the logits directly, since the cross-entropy loss takes care of the softmax")
     def test_valid_softmax(self):
         """
         Tests if the output predictions of the 2D-LSTM form a valid softmax distribution over the vocabulary, i.e.
