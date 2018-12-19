@@ -72,6 +72,22 @@ def main():
                 avg_loss = np.mean(loss_history)
                 print('Average loss after {} batches (epoch #{}): {}'.format(i, epoch + 1, avg_loss))
 
+            if not i % 100:
+                model.eval()
+                test_model(model, dataset)
+                model.train()
+
+
+def test_model(model, dataset):
+    example_sentence = 'Good morning , how are you ?'
+    tokens = example_sentence.split(' ')
+    x = torch.tensor([[dataset.src.vocab.stoi[w] for w in tokens]], dtype=torch.long).t()
+    pred = model.forward(x)
+
+    predicted_tokens = list(torch.argmax(pred, dim=-1).view(-1))
+    output_sentence = ' '.join([dataset.tgt.vocab.itos[i] for i in predicted_tokens])
+    print('Prediction for {}: {}'.format(example_sentence, output_sentence))
+
 
 if __name__ == '__main__':
     main()

@@ -169,7 +169,7 @@ class LSTM2d(nn.Module):
         input_seq_len = h.size()[0]
 
         # initialize y to (embedded) start tokens
-        y_i = torch.tensor([self.__start_token], dtype=torch.long).repeat(batch_size)
+        y_i = torch.tensor([self.bos_token], dtype=torch.long).repeat(batch_size)
         y_i = self.output_embedding.forward(y_i)
 
         # hidden states and cell states at previous vertical step i-1
