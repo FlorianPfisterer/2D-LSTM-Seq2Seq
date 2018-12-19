@@ -29,7 +29,6 @@ class LSTM2dFitTest(TestCase):
         dataset_size = 5
         x = torch.randint(1, self.vocab_size, (self.max_input_len, dataset_size), dtype=torch.long)
         y = x.clone()   # should learn the identity function
-        y_t = y.t()
 
         loss = torch.nn.CrossEntropyLoss()
         optimizer = torch.optim.Adam(self.lstm.parameters(), lr=0.01)
@@ -39,8 +38,8 @@ class LSTM2dFitTest(TestCase):
         initial_loss = -1
         last_loss = -1
         for _ in range(100):
-            y_pred = self.lstm.forward(x, y).permute(1, 2, 0)   # convert to shape (batch x vocab_size x max_output_len)
-            loss_value = loss(y_pred, y_t)
+            y_pred = self.lstm.forward(x, y).view(-1, self.vocab_size)
+            loss_value = loss(y_pred, y.view(-1))
 
             last_loss = loss_value.item()
             if initial_loss < 0:
