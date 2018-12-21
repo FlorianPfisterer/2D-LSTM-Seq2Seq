@@ -67,7 +67,7 @@ class LSTM2d(nn.Module):
             y_pred: (output_seq_len x batch x output_vocab_size)
                 predicted output sequence (logits for output_vocab_size)
         """
-        h = self.__encoder_lstm(x)
+        h = self.__encoder_lstm(x, x_lengths)
 
         if self.training:
             assert y is not None, 'You must supply the correct tokens in training mode.'
@@ -110,6 +110,14 @@ class LSTM2d(nn.Module):
         s_diag = torch.zeros(max_len, batch_size, self.state_dim_2d)
         c_diag = torch.zeros(max_len, batch_size, self.state_dim_2d)
 
+        # create masking tensors based on x_lengths and y_lengths so we ignore padding
+        # TODO find a vectorized solution for this!
+        hor_mask = torch.zeros(batch_size, input_seq_len)
+        ver_mask = torch.zeros(batch_size, output_seq_len)
+        for i in range(batch_size):
+            hor_mask[i, :h_lengths[i]] = 1
+            ver_mask[i, :y_lengths[i]] = 1
+
         # if the bigger dimension is the input dimension, we need to store the hidden states from the last cells
         # in the last diagonals (from diagonal_num = input_seq_len-1 to the last one)
         needs_to_store_cell_states_separately = max_len != min_len and max_len == input_seq_len
@@ -142,7 +150,8 @@ class LSTM2d(nn.Module):
             c_next = c_next.view(diagonal_len, batch_size, self.state_dim_2d)
             s_next = s_next.view(diagonal_len, batch_size, self.state_dim_2d)
 
-            # store new hidden and cell states at the right indices for the next diagonal(s) to use
+            # store new hidden and cell states at the right indices for the next diagonal(s) to use, but only if the
+            # sequence is still 'active' (i.e. not masked)
             (max_from, max_to) = (ver_from, ver_to) if max_len == output_seq_len else (hor_from, hor_to)
             s_diag[max_from:max_to, :, :] = s_next[:, :, :]
             c_diag[max_from:max_to, :, :] = c_next[:, :, :]
@@ -229,19 +238,24 @@ class LSTM2d(nn.Module):
         y_pred = y_pred[:i, :, :]
         return y_pred
 
-    def __encoder_lstm(self, x):
+    def __encoder_lstm(self, x, x_lengths):
         """
         Runs the bidirectional encoder LSTM on the input sequence to obtain the hidden states h_j.
         Args:
             x: (input_seq_len x batch) input tokens (indices in range [0, input_vocab_size))
+            x_lengths: (batch) lengths of the (unpadded) input sequences, used for handling padding
 
         Returns:
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
         """
-        embedded_x = self.input_embedding.forward(x)      # (input_seq_len x batch x embed_dim)
-        h, _ = self.encoder.forward(embedded_x)           # (input_seq_len x batch x 2*encoder_state_dim)
+        embedded_x = self.input_embedding.forward(x)        # (input_seq_len x batch x embed_dim)
 
-        return h
+        # pack and unpack the padded batch for the encoder
+        packed_x = nn.utils.rnn.pack_padded_sequence(embedded_x, x_lengths)
+        h, _ = self.encoder.forward(packed_x)               # (input_seq_len x batch x 2*encoder_state_dim)
+        unpacked_h, _ = nn.utils.rnn.pad_packed_sequence(h)
+
+        return unpacked_h
 
     @staticmethod
     def __calculate_input_ranges(diagonal_num: int, input_seq_len: int, output_seq_len: int):

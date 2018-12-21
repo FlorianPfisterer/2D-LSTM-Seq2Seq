@@ -1,4 +1,3 @@
-from nltk import word_tokenize
 import nltk
 import pandas as pd
 from torchtext.data import Field, TabularDataset

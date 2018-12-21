@@ -1,6 +1,6 @@
 from data.iwslt14_small.dataset_utils import create_dataset, BOS_TOKEN, EOS_TOKEN
 from model.lstm2d import LSTM2d
-from torchtext.data import BucketIterator
+from data.sorted_batch_iterator import SortedBatchIterator
 import argparse
 import torch
 import numpy as np
@@ -45,8 +45,8 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
     loss = torch.nn.CrossEntropyLoss()
 
-    train_iter = BucketIterator(dataset.train, batch_size=options.batch_size,
-                                sort_key=lambda x: -len(x.src), shuffle=options.shuffle)
+    train_iter = SortedBatchIterator(dataset.train, sort_key=lambda example: -len(example.src),
+                                     batch_size=options.batch_size, shuffle=options.shuffle)
 
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
