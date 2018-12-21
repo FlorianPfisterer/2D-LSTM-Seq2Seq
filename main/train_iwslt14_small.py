@@ -56,10 +56,11 @@ def main():
 
         for i, batch in enumerate(train_iter):
             optimizer.zero_grad()
-            x = batch.src
-            y = batch.tgt[1:, :]        # remove <sos> token (the net should not generate this)
+            x, x_lengths = batch.src
+            y, y_lengths = batch.tgt
+            y = y[1:, :]                # remove <sos> token (the net should not generate this)
 
-            y_pred = model.forward(x=x, y=y)
+            y_pred = model.forward(x=x, x_lengths=x_lengths, y=y, y_lengths=y_lengths)
             y_pred = y_pred.view(-1, tgt_vocab_size)
 
             loss_value = loss(y_pred, y.view(-1))
@@ -82,11 +83,12 @@ def test_model(model, dataset):
     example_sentence = 'Good morning , how are you ?'
     tokens = example_sentence.split(' ')
     x = torch.tensor([[dataset.src.vocab.stoi[w] for w in tokens]], dtype=torch.long).t()
-    pred = model.forward(x)
+    x_lengths = torch.tensor([len(tokens)], dtype=torch.long)
+    pred = model.forward(x, x_lengths)
 
     predicted_tokens = list(torch.argmax(pred, dim=-1).view(-1))
     output_sentence = ' '.join([dataset.tgt.vocab.itos[i] for i in predicted_tokens])
-    print('Prediction for {}: {}'.format(example_sentence, output_sentence))
+    print('translate(\"{}\") ==> \"{}\"'.format(example_sentence, output_sentence))
 
 
 if __name__ == '__main__':

@@ -54,14 +54,8 @@ def __create_fields() -> Tuple[Field, Field]:
             - src_field: Field representing the source language
             - tgt_field: Field representing the target language
     """
-    def tokenize_src(sentence: str):
-        return word_tokenize(sentence)
-
-    def tokenize_target(sentence: str):
-        return word_tokenize(sentence)
-
-    src_field = Field(tokenize=tokenize_src)
-    tgt_field = Field(tokenize=tokenize_target, init_token=BOS_TOKEN, eos_token=EOS_TOKEN)
+    src_field = Field(include_lengths=True)
+    tgt_field = Field(include_lengths=True, init_token=BOS_TOKEN, eos_token=EOS_TOKEN)
 
     return src_field, tgt_field
 
@@ -98,7 +92,7 @@ def __save_dataset_to_csv_if_needed(mode: str) -> None:
     if not os.path.exists(file_path):
         src, tgt = __load_dataset(mode)
         frame = __convert_to_df(src, tgt)
-        frame.to_csv(file_path, index=False)
+        frame.to_csv(file_path, index=False, header=False)
 
 
 def save_dataset() -> None:

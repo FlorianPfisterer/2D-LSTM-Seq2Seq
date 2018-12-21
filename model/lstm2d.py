@@ -52,14 +52,16 @@ class LSTM2d(nn.Module):
         # the encoder LSTM goes over the input sequence x and provides the hidden states h_j for the 2d-LSTM
         self.encoder = nn.LSTM(input_size=embed_dim, hidden_size=encoder_state_dim, bidirectional=True)
 
-    def forward(self, x, y=None):
+    def forward(self, x, x_lengths, y=None, y_lengths=None):
         """
         Runs the complete forward propagation for the 2d-LSTM, using two different implementations for training
         and inference.
         Args:
             x: (input_seq_len x batch) input tokens (indices in range [0, input_vocab_size))
+            x_lengths: (batch) lengths of the (unpadded) input sequences, used for masking
             y (only if training): (output_seq_len x batch) correct output tokens
                                   (indices in range [0, output_vocab_size))
+            y_lengths (only if training): (batch) lengths of the (unpadded) correct output sequences, used for masking
 
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size)
@@ -69,11 +71,11 @@ class LSTM2d(nn.Module):
 
         if self.training:
             assert y is not None, 'You must supply the correct tokens in training mode.'
-            return self.__training_forward(h, y)
+            return self.__training_forward(h=h, h_lengths=x_lengths, y=y, y_lengths=y_lengths)
         else:
             return self.__inference_forward(h)
 
-    def __training_forward(self, h, y):
+    def __training_forward(self, h, h_lengths, y, y_lengths):
         """
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
         advance.
@@ -83,7 +85,9 @@ class LSTM2d(nn.Module):
 
         Args:
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
+            h_lengths: (batch) lengths of the (unpadded) input sequences, used for masking
             y: (output_seq_len x batch) correct output tokens (indices in range [0, output_vocab_size))
+            y_lengths: (batch) lengths of the (unpadded) correct output sequences, used for masking
 
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size)
