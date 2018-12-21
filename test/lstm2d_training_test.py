@@ -43,28 +43,6 @@ class LSTM2dTrainingTest(TestCase):
         self.assertEqual(pred_shape, [self.max_output_len, self.batch_size, self.output_vocab_size],
                          'The predictions have an unexpected shape.')
 
-    @skip("the 2D-LSTM now outputs the logits directly, since the cross-entropy loss takes care of the softmax")
-    def test_valid_softmax(self):
-        """
-        Tests if the output predictions of the 2D-LSTM form a valid softmax distribution over the vocabulary, i.e.
-        the elements are in [0, 1] and sum to 1.
-        """
-        sample_x = torch.randint(0, self.input_vocab_size, (self.max_input_len, self.batch_size), dtype=torch.long)
-        sample_y = torch.randint(0, self.output_vocab_size, (self.max_output_len, self.batch_size), dtype=torch.long)
-
-        self.lstm.train()
-        pred = self.lstm.forward(x=sample_x, y=sample_y)    # shape (max_output_len x batch_size x vocab_size)
-
-        # check [0, 1] range
-        self.assertTrue(torch.max(pred) <= 1.0, 'Softmax distribution contains values > 1.')
-        self.assertTrue(torch.min(pred) >= 0.0, 'Softmax distribution contains values < 0.')
-
-        # check that values sum to one
-        expected_sums = torch.ones(self.max_output_len, self.batch_size, 1)
-        sums = torch.sum(pred, dim=2, keepdim=True)
-
-        self.assertTrue(torch.allclose(expected_sums, sums), 'The softmax distribution does not sum to 1.')
-
     def test_same_over_batch(self):
         """
         Tests if the outputs of the 2D-LSTM are the same over the batch if the same input is fed in multiple times.

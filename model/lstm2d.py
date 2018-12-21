@@ -20,11 +20,14 @@ class LSTM2d(nn.Module):
         input_vocab_size: size of the input vocabulary (i.e. number of embedding vectors in the source language)
         output_vocab_size: size of the output vocabulary (i.e. number of embedding vectors in the target language)
 
+        max_output_len: the maximum number of tokens to generate for an output sequence in inference mode until an
+                        <eos> token is generated
+
         bos_token: the token (index) representing the beginning of a sentence in the output vocabulary
         eos_token: the token (index) representing the end of a sentence in the output vocabulary
     """
     def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, input_vocab_size, output_vocab_size,
-                 bos_token=1, eos_token=2):
+                 max_output_len=100, bos_token=1, eos_token=2):
         super(LSTM2d, self).__init__()
 
         self.embed_dim = embed_dim
@@ -32,6 +35,7 @@ class LSTM2d(nn.Module):
         self.encoder_state_dim = encoder_state_dim
         self.input_vocab_size = input_vocab_size
         self.output_vocab_size = output_vocab_size
+        self.max_output_len = max_output_len
         self.bos_token = bos_token
         self.eos_token = eos_token
 
@@ -155,15 +159,15 @@ class LSTM2d(nn.Module):
 
     def __inference_forward(self, h):
         """
-        Naive O(input_seq_len^2) implementation of the 2D-LSTM forward pass at inference time.
+        Naive O(input_seq_len * output_seq_len) implementation of the 2D-LSTM forward pass at inference time.
 
         Args:
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
 
         Returns:
-            y_pred: (input_seq_len x batch x output_vocab_size)
-                predicted output sequence (logits for output_vocab_size)
-                (generates for the the same length as the input -- input_seq_len)
+            y_pred: (output_seq_len x batch x output_vocab_size) predictions (logits) for the output sequence,
+             where output_seq_len <= max_output_len (depending on when the model predicts <eos> for each sequence),
+             zero-padded for sequences in the batch that were <eos>-ed by the model before iteration # output_seq_len
         """
         batch_size = h.size()[1]
         input_seq_len = h.size()[0]
@@ -176,32 +180,49 @@ class LSTM2d(nn.Module):
         s_prev_i = torch.zeros(input_seq_len, batch_size, self.state_dim_2d)
         c_prev_i = torch.zeros(input_seq_len, batch_size, self.state_dim_2d)
 
-        # result tensor
-        y_pred = torch.empty(input_seq_len, batch_size, self.output_vocab_size)
+        # result tensor (will later be truncated to the longest generated sequence in the batch in the first dimension)
+        y_pred = torch.zeros(self.max_output_len, batch_size, self.output_vocab_size)
 
-        # go through each decoder output step
-        for i in range(input_seq_len):
+        # go through each decoder output step, until either the maximum length is reached or all sentences are <eos>-ed
+        i = 0
+        num_seq_left = batch_size
+        active_indices = torch.tensor(list(range(batch_size)))
+        while i < self.max_output_len and num_seq_left > 0:
             # initialize previous horizontal hidden state and cell state
-            s_prev_hor = torch.zeros(batch_size, self.state_dim_2d)
-            c_prev_hor = torch.zeros(batch_size, self.state_dim_2d)
+            s_prev_hor = torch.zeros(num_seq_left, self.state_dim_2d)
+            c_prev_hor = torch.zeros(num_seq_left, self.state_dim_2d)
 
             for j in range(input_seq_len):
                 # input to 2d-cell is concatenation of encoder hidden state h_j and last generated token y_i
-                h_j = h[j, :, :]
-                x_j = torch.cat([y_i, h_j], dim=-1)
+                h_j = h[j, active_indices, :]
+                x_j = torch.cat([h_j, y_i], dim=-1)
 
-                s_prev_ver = s_prev_i[j, :, :]
-                c_prev_ver = c_prev_i[j, :, :]
+                s_prev_ver = s_prev_i[j, active_indices, :]
+                c_prev_ver = c_prev_i[j, active_indices, :]
 
                 c_prev_hor, s_prev_hor = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
 
             # obtain next predicted token
-            y_pred_i = self.logits.forward(s_prev_hor)
-            y_pred[i, :, :] = y_pred_i
+            y_pred_i = self.logits.forward(s_prev_hor)  # (num_seq_left x output_vocab_size)
+            y_pred[i, active_indices, :] = y_pred_i
 
-            # next generated token embedding (TODO beam seach?)
-            y_i = self.output_embedding.forward(torch.argmax(y_pred_i, dim=1))
+            # remove sentences from the batch if the argmax prediction is an <eos> token
+            index_map = torch.ones(batch_size, dtype=torch.long) + self.eos_token     # no value is equal to eos_token
+            argmax_tokens = torch.argmax(y_pred_i, dim=-1)          # (num_seq_left)
+            index_map[active_indices] = argmax_tokens               # set the correct num_seq_left predictions
 
+            # re-calculate the indices into the batch which are still activate
+            eosed_sequences = index_map.eq(self.eos_token)
+            num_seq_left -= eosed_sequences.sum().item()
+            active_indices = (eosed_sequences == 0).nonzero().view(-1)
+            assert len(active_indices) == num_seq_left
+
+            # next generated token embedding
+            y_i = self.output_embedding.forward(argmax_tokens[active_indices])
+            i += 1
+
+        # truncate to longest generated sequence (i <= self.max_output_len) (will be zero-padded)
+        y_pred = y_pred[:i, :, :]
         return y_pred
 
     def __encoder_lstm(self, x):
