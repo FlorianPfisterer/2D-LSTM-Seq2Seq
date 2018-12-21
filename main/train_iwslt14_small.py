@@ -45,7 +45,7 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
     loss = torch.nn.CrossEntropyLoss()
 
-    train_iter = SortedBatchIterator(dataset.train, sort_key=lambda example: -len(example.src),
+    train_iter = SortedBatchIterator(dataset.train, sort_key=lambda example: (-len(example.src), -len(example.tgt)),
                                      batch_size=options.batch_size, shuffle=options.shuffle)
 
     for epoch in range(options.epochs):

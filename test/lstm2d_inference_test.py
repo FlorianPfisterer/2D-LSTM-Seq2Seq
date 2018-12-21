@@ -30,10 +30,11 @@ class LSTM2dInferenceTest(TestCase):
         """
         # random token indices of shape (input_seq_len x batch_size)
         sample_x = torch.randint(0, self.input_vocab_size, (self.input_seq_len, self.batch_size), dtype=torch.long)
+        x_lengths = torch.tensor([self.input_seq_len] * self.batch_size, dtype=torch.long)
 
         # toy inference
         self.lstm.eval()
-        pred = self.lstm.forward(x=sample_x, y=None)
+        pred = self.lstm.forward(x=sample_x, x_lengths=x_lengths)
 
         pred_shape = list(pred.shape)
         output_seq_len = pred_shape[0]  # this depends on the model parameters (when it predicts '<eos>')
@@ -46,9 +47,10 @@ class LSTM2dInferenceTest(TestCase):
         """
         repeated_x = torch.tensor([0, 1, 2, 0], dtype=torch.long)
         batch_x = repeated_x.expand(self.batch_size, self.input_seq_len).t()
+        x_lengths = torch.tensor([4] * self.batch_size, dtype=torch.long)
 
         self.lstm.eval()
-        pred = self.lstm.forward(x=batch_x, y=None)     # shape (output_seq_len x batch_size x vocab_size)
+        pred = self.lstm.forward(x=batch_x, x_lengths=x_lengths)     # shape (output_seq_len x batch_size x vocab_size)
 
         pred_first = pred[:, 0, :]
         output_seq_len = list(pred_first.shape)[0]

@@ -73,7 +73,7 @@ class LSTM2d(nn.Module):
             assert y is not None, 'You must supply the correct tokens in training mode.'
             return self.__training_forward(h=h, h_lengths=x_lengths, y=y, y_lengths=y_lengths)
         else:
-            return self.__inference_forward(h)
+            return self.__inference_forward(h=h, h_lengths=x_lengths)
 
     def __training_forward(self, h, h_lengths, y, y_lengths):
         """
@@ -110,6 +110,12 @@ class LSTM2d(nn.Module):
         s_diag = torch.zeros(max_len, batch_size, self.state_dim_2d)
         c_diag = torch.zeros(max_len, batch_size, self.state_dim_2d)
 
+        # if the bigger dimension is the input dimension, we need to store the hidden states from the last cells
+        # in the last diagonals (from diagonal_num = input_seq_len-1 to the last one)
+        needs_to_store_cell_states_separately = max_len != min_len and max_len == input_seq_len
+        if needs_to_store_cell_states_separately:
+            output_hidden_states = torch.zeros(output_seq_len, batch_size, self.state_dim_2d)
+
         # create masking tensors based on x_lengths and y_lengths so we ignore padding
         # TODO find a vectorized solution for this!
         hor_mask = torch.zeros(batch_size, input_seq_len)
@@ -117,12 +123,6 @@ class LSTM2d(nn.Module):
         for i in range(batch_size):
             hor_mask[i, :h_lengths[i]] = 1
             ver_mask[i, :y_lengths[i]] = 1
-
-        # if the bigger dimension is the input dimension, we need to store the hidden states from the last cells
-        # in the last diagonals (from diagonal_num = input_seq_len-1 to the last one)
-        needs_to_store_cell_states_separately = max_len != min_len and max_len == input_seq_len
-        if needs_to_store_cell_states_separately:
-            output_hidden_states = torch.zeros(output_seq_len, batch_size, self.state_dim_2d)
 
         for diagonal_num in range(min_len + max_len - 1):
             (ver_from, ver_to), (hor_from, hor_to) = LSTM2d.__calculate_input_ranges(diagonal_num=diagonal_num,
@@ -151,7 +151,7 @@ class LSTM2d(nn.Module):
             s_next = s_next.view(diagonal_len, batch_size, self.state_dim_2d)
 
             # store new hidden and cell states at the right indices for the next diagonal(s) to use, but only if the
-            # sequence is still 'active' (i.e. not masked)
+            # sequence is still 'active' (i.e. not masked) => use ??? TODO
             (max_from, max_to) = (ver_from, ver_to) if max_len == output_seq_len else (hor_from, hor_to)
             s_diag[max_from:max_to, :, :] = s_next[:, :, :]
             c_diag[max_from:max_to, :, :] = c_next[:, :, :]
@@ -170,12 +170,13 @@ class LSTM2d(nn.Module):
         y_pred = self.logits.forward(states_for_pred)
         return y_pred
 
-    def __inference_forward(self, h):
+    def __inference_forward(self, h, h_lengths):
         """
         Naive O(input_seq_len * output_seq_len) implementation of the 2D-LSTM forward pass at inference time.
 
         Args:
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
+            h_lengths: (batch) lengths of the (unpadded) input sequences, used for masking
 
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size) predictions (logits) for the output sequence,
@@ -196,6 +197,11 @@ class LSTM2d(nn.Module):
         # result tensor (will later be truncated to the longest generated sequence in the batch in the first dimension)
         y_pred = torch.zeros(self.max_output_len, batch_size, self.output_vocab_size)
 
+        # create horizontal mask tensor based on h_lengths to handle padding # TODO vectorized implementation
+        hor_mask = torch.zeros(batch_size, input_seq_len)
+        for i in range(batch_size):
+            hor_mask[i, :h_lengths[i]] = 1
+
         # go through each decoder output step, until either the maximum length is reached or all sentences are <eos>-ed
         i = 0
         num_seq_left = batch_size
@@ -213,7 +219,12 @@ class LSTM2d(nn.Module):
                 s_prev_ver = s_prev_i[j, active_indices, :]
                 c_prev_ver = c_prev_i[j, active_indices, :]
 
-                c_prev_hor, s_prev_hor = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
+                c_hor_next, s_hor_next = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
+
+                # apply mask for active indices
+                mask = hor_mask[active_indices, j].view(-1, 1)
+                c_prev_hor = (1 - mask) * c_prev_hor + mask * c_hor_next    # broadcasts over cell_state_dim dimension
+                s_prev_hor = (1 - mask) * s_prev_hor + mask * s_hor_next
 
             # obtain next predicted token
             y_pred_i = self.logits.forward(s_prev_hor)  # (num_seq_left x output_vocab_size)
