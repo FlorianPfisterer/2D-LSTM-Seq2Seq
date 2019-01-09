@@ -116,19 +116,11 @@ class LSTM2d(nn.Module):
         if needs_to_store_cell_states_separately:
             output_hidden_states = torch.zeros(output_seq_len, batch_size, self.state_dim_2d)
 
-        # create masking tensors based on x_lengths and y_lengths so we ignore padding
-        # TODO find a vectorized solution for this!
-        hor_mask = torch.zeros(batch_size, input_seq_len)
-        ver_mask = torch.zeros(batch_size, output_seq_len)
-        for i in range(batch_size):
-            hor_mask[i, :h_lengths[i]] = 1
-            ver_mask[i, :y_lengths[i]] = 1
-
         for diagonal_num in range(min_len + max_len - 1):
             (ver_from, ver_to), (hor_from, hor_to) = LSTM2d.__calculate_input_ranges(diagonal_num=diagonal_num,
                                                                                      input_seq_len=input_seq_len,
                                                                                      output_seq_len=output_seq_len)
-            diagonal_len = ver_to - ver_from  # (always == hor_to - hor_from)
+            diagonal_len = ver_to - ver_from  # (always equals hor_to - hor_from)
 
             # calculate x input for this diagonal
             # treat diagonal as batches and reshape inputs accordingly
@@ -150,11 +142,21 @@ class LSTM2d(nn.Module):
             c_next = c_next.view(diagonal_len, batch_size, self.state_dim_2d)
             s_next = s_next.view(diagonal_len, batch_size, self.state_dim_2d)
 
-            # store new hidden and cell states at the right indices for the next diagonal(s) to use, but only if the
-            # sequence is still 'active' (i.e. not masked) => use ??? TODO
-            (max_from, max_to) = (ver_from, ver_to) if max_len == output_seq_len else (hor_from, hor_to)
-            s_diag[max_from:max_to, :, :] = s_next[:, :, :]
-            c_diag[max_from:max_to, :, :] = c_next[:, :, :]
+            # create horizontal mask according to the lengths so we get the correct predictions in the end
+            # TODO: vectorize this
+            hor_mask = torch.ones(diagonal_len, batch_size, self.state_dim_2d)
+            for i in range(batch_size):
+                hor_len = y_lengths[i].item()
+
+                if hor_len < hor_to:
+                    hor_mask[hor_len:hor_to, i, :] = 0
+
+            # store new hidden and cell states at the right indices for the next diagonals to use
+            (max_from, max_to) = (ver_from, ver_to) if max_len == input_seq_len else (hor_from, hor_to)
+            s_diag[max_from:max_to, :, :] = hor_mask * s_next[:, :, :]\
+                                            + (1 - hor_mask) * s_diag[max_from:max_to, :, :].clone()
+            c_diag[max_from:max_to, :, :] = hor_mask * c_next[:, :, :]\
+                                            + (1 - hor_mask) * c_diag[max_from:max_to, :, :].clone()
 
             if needs_to_store_cell_states_separately and diagonal_num >= max_len - 1:
                 # store the last hidden state of this diagonal for the output prediction (later)

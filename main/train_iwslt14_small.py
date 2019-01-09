@@ -9,7 +9,7 @@ import numpy as np
 parser = argparse.ArgumentParser(description='train_iwslt14_small.py')
 parser.add_argument('-batch_size', default=32,
                     help='The batch size to use for training and inference.')
-parser.add_argument('-epochs', default=1,
+parser.add_argument('-epochs', default=5,
                     help='The number of epochs to train.')
 parser.add_argument('-shuffle', default=True,
                     help='Whether or not to shuffle the training examples.')
@@ -59,6 +59,9 @@ def main():
             x, x_lengths = batch.src
             y, y_lengths = batch.tgt
             y = y[1:, :]                # remove <sos> token (the net should not generate this)
+            y_lengths = y_lengths - 1   # account for removed <sos> token in lengths
+
+            x_lengths[x_lengths <= 0] = 1   # TODO -- crashes for values <= 0
 
             y_pred = model.forward(x=x, x_lengths=x_lengths, y=y, y_lengths=y_lengths)
             y_pred = y_pred.view(-1, tgt_vocab_size)
