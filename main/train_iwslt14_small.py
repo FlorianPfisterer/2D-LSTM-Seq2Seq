@@ -1,4 +1,4 @@
-from data.iwslt14_small.dataset_utils import create_dataset, BOS_TOKEN, EOS_TOKEN
+from data.iwslt14_small.dataset_utils import create_dataset, BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
 from model.lstm2d import LSTM2d
 from data.sorted_batch_iterator import SortedBatchIterator
 import argparse
@@ -7,7 +7,7 @@ import numpy as np
 
 # define options
 parser = argparse.ArgumentParser(description='train_iwslt14_small.py')
-parser.add_argument('-batch_size', default=32,
+parser.add_argument('-batch_size', default=3,
                     help='The batch size to use for training and inference.')
 parser.add_argument('-epochs', default=5,
                     help='The number of epochs to train.')
@@ -31,6 +31,7 @@ def main():
     tgt_vocab_size = len(dataset.tgt.vocab)
     bos_token = dataset.tgt.vocab.stoi[BOS_TOKEN]
     eos_token = dataset.tgt.vocab.stoi[EOS_TOKEN]
+    pad_token = dataset.tgt.vocab.stoi[PAD_TOKEN]
 
     model = LSTM2d(
         embed_dim=options.embed_dim,
@@ -39,12 +40,11 @@ def main():
         input_vocab_size=src_vocab_size,
         output_vocab_size=tgt_vocab_size,
         bos_token=bos_token,
-        eos_token=eos_token
+        eos_token=eos_token,
+        pad_token=pad_token
     )
 
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
-    loss = torch.nn.CrossEntropyLoss()
-
     train_iter = SortedBatchIterator(dataset.train, sort_key=lambda example: (-len(example.src), -len(example.tgt)),
                                      batch_size=options.batch_size, shuffle=options.shuffle)
 
@@ -64,9 +64,7 @@ def main():
             x_lengths[x_lengths <= 0] = 1   # TODO -- crashes for values <= 0
 
             y_pred = model.forward(x=x, x_lengths=x_lengths, y=y, y_lengths=y_lengths)
-            y_pred = y_pred.view(-1, tgt_vocab_size)
-
-            loss_value = loss(y_pred, y.view(-1))
+            loss_value = model.loss(y_pred, y)
             loss_history.append(loss_value.item())
 
             loss_value.backward()

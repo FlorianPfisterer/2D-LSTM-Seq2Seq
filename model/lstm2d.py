@@ -27,7 +27,7 @@ class LSTM2d(nn.Module):
         eos_token: the token (index) representing the end of a sentence in the output vocabulary
     """
     def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, input_vocab_size, output_vocab_size,
-                 max_output_len=100, bos_token=1, eos_token=2):
+                 max_output_len=100, bos_token=1, eos_token=2, pad_token=0):
         super(LSTM2d, self).__init__()
 
         self.embed_dim = embed_dim
@@ -38,6 +38,7 @@ class LSTM2d(nn.Module):
         self.max_output_len = max_output_len
         self.bos_token = bos_token
         self.eos_token = eos_token
+        self.pad_token = pad_token
 
         self.input_embedding = nn.Embedding(num_embeddings=input_vocab_size, embedding_dim=embed_dim)
         self.output_embedding = nn.Embedding(num_embeddings=output_vocab_size, embedding_dim=embed_dim)
@@ -48,6 +49,7 @@ class LSTM2d(nn.Module):
 
         # final output layer for next predicted token
         self.logits = nn.Linear(in_features=state_dim_2d, out_features=output_vocab_size)
+        self.loss_function = torch.nn.CrossEntropyLoss(ignore_index=pad_token)
 
         # the encoder LSTM goes over the input sequence x and provides the hidden states h_j for the 2d-LSTM
         self.encoder = nn.LSTM(input_size=embed_dim, hidden_size=encoder_state_dim, bidirectional=True)
@@ -74,12 +76,21 @@ class LSTM2d(nn.Module):
         if self.training:
             assert y is not None, 'You must supply the correct tokens in training mode.'
             assert y_lengths is not None, 'You must supply the lengths of the target sentences in training mode.'
-            assert x_lengths.min().item() == x_lengths.max().item() == x.size()[0],\
-                'In training mode, all input sequences must be of the same length.'
 
             return self.__training_forward(h=h, y=y, y_lengths=y_lengths)
         else:
             return self.__inference_forward(h=h, h_lengths=x_lengths)
+
+    def loss(self, y_pred, y_target):
+        """
+        Returns the cross entropy loss value for the given predictions and targets, ignoring padded indices.
+        Args:
+            y_pred: (output_seq_len x batch x output_vocab_size) predicted output sequence (float logits)
+            y_target: (output_seq_len x batch) target output tokens (long indices into output_seq_len)
+
+        Returns: () scalar-tensor representing the cross-entropy loss between y_pred and y_target
+        """
+        return self.loss_function(y_pred.view(-1, self.output_vocab_size), y_target.view(-1))
 
     def __training_forward(self, h, y, y_lengths):
         """
@@ -165,7 +176,14 @@ class LSTM2d(nn.Module):
             states_for_pred = s_diag[:, :, :]
         assert list(states_for_pred.shape) == [output_seq_len, batch_size, self.state_dim_2d]
 
-        y_pred = self.logits.forward(states_for_pred)
+        y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
+
+        # apply padding according to y_lengths
+        for i in range(batch_size):
+            # set output predictions to self.pad_token for indices longer than the target output sequence length
+            y_pred[y_lengths[i]:, i, :] = 0
+            y_pred[y_lengths[i]:, i, self.pad_token] = 1   # ==> argmax prediction is now self.pad_token
+
         return y_pred
 
     def __inference_forward(self, h, h_lengths):

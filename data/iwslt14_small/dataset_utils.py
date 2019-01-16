@@ -20,6 +20,7 @@ Dataset = namedtuple('Dataset', ['src', 'tgt', 'train', 'val'])
 
 BOS_TOKEN = '<bos>'
 EOS_TOKEN = '<eos>'
+PAD_TOKEN = '<pad>'
 
 
 def __load_dataset(mode: str = 'train') -> Tuple[List[str], List[str]]:
@@ -53,8 +54,8 @@ def __create_fields() -> Tuple[Field, Field]:
             - src_field: Field representing the source language
             - tgt_field: Field representing the target language
     """
-    src_field = Field(include_lengths=True)
-    tgt_field = Field(include_lengths=True, init_token=BOS_TOKEN, eos_token=EOS_TOKEN)
+    src_field = Field(include_lengths=True, pad_token=PAD_TOKEN)
+    tgt_field = Field(include_lengths=True, init_token=BOS_TOKEN, eos_token=EOS_TOKEN, pad_token=PAD_TOKEN)
 
     return src_field, tgt_field
 
