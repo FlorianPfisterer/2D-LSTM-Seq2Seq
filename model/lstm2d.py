@@ -54,7 +54,7 @@ class LSTM2d(nn.Module):
         # the encoder LSTM goes over the input sequence x and provides the hidden states h_j for the 2d-LSTM
         self.encoder = nn.LSTM(input_size=embed_dim, hidden_size=encoder_state_dim, bidirectional=True)
 
-    def forward(self, x, x_lengths, y=None, y_lengths=None):
+    def forward(self, x, x_lengths, y=None):
         """
         Runs the complete forward propagation for the 2d-LSTM, using two different implementations for training
         and inference.
@@ -65,7 +65,6 @@ class LSTM2d(nn.Module):
                     (i.e. no padding for the horizontal dimension)
             y (only if training): (output_seq_len x batch) correct output tokens
                                   (indices in range [0, output_vocab_size))
-            y_lengths (only if training): (batch) lengths of the (unpadded) correct output sequences, used for masking
 
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size)
@@ -75,15 +74,13 @@ class LSTM2d(nn.Module):
 
         if self.training:
             assert y is not None, 'You must supply the correct tokens in training mode.'
-            assert y_lengths is not None, 'You must supply the lengths of the target sentences in training mode.'
-
-            return self.__training_forward(h=h, y=y, y_lengths=y_lengths)
+            return self.__training_forward(h=h, y=y)
         else:
             return self.__inference_forward(h=h, h_lengths=x_lengths)
 
     def loss(self, y_pred, y_target):
         """
-        Returns the cross entropy loss value for the given predictions and targets, ignoring padded indices.
+        Returns the cross entropy loss value for the given predictions and targets, ignoring <pad>-targets.
         Args:
             y_pred: (output_seq_len x batch x output_vocab_size) predicted output sequence (float logits)
             y_target: (output_seq_len x batch) target output tokens (long indices into output_seq_len)
@@ -92,7 +89,7 @@ class LSTM2d(nn.Module):
         """
         return self.loss_function(y_pred.view(-1, self.output_vocab_size), y_target.view(-1))
 
-    def __training_forward(self, h, y, y_lengths):
+    def __training_forward(self, h, y):
         """
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
         advance.
@@ -177,13 +174,6 @@ class LSTM2d(nn.Module):
         assert list(states_for_pred.shape) == [output_seq_len, batch_size, self.state_dim_2d]
 
         y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
-
-        # apply padding according to y_lengths
-        for i in range(batch_size):
-            # set output predictions to self.pad_token for indices longer than the target output sequence length
-            y_pred[y_lengths[i]:, i, :] = 0
-            y_pred[y_lengths[i]:, i, self.pad_token] = 1   # ==> argmax prediction is now self.pad_token
-
         return y_pred
 
     def __inference_forward(self, h, h_lengths):

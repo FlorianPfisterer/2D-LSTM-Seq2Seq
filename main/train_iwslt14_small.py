@@ -57,13 +57,12 @@ def main():
         for i, batch in enumerate(train_iter):
             optimizer.zero_grad()
             x, x_lengths = batch.src
-            y, y_lengths = batch.tgt
+            y = batch.tgt
             y = y[1:, :]                # remove <sos> token (the net should not generate this)
-            y_lengths = y_lengths - 1   # account for removed <sos> token in lengths
 
             x_lengths[x_lengths <= 0] = 1   # TODO -- crashes for values <= 0
 
-            y_pred = model.forward(x=x, x_lengths=x_lengths, y=y, y_lengths=y_lengths)
+            y_pred = model.forward(x=x, x_lengths=x_lengths, y=y)
             loss_value = model.loss(y_pred, y)
             loss_history.append(loss_value.item())
 

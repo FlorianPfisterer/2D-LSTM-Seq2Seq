@@ -55,7 +55,7 @@ def __create_fields() -> Tuple[Field, Field]:
             - tgt_field: Field representing the target language
     """
     src_field = Field(include_lengths=True, pad_token=PAD_TOKEN)
-    tgt_field = Field(include_lengths=True, init_token=BOS_TOKEN, eos_token=EOS_TOKEN, pad_token=PAD_TOKEN)
+    tgt_field = Field(include_lengths=False, init_token=BOS_TOKEN, eos_token=EOS_TOKEN, pad_token=PAD_TOKEN)
 
     return src_field, tgt_field
 
