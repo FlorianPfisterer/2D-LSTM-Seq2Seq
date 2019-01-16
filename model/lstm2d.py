@@ -59,6 +59,8 @@ class LSTM2d(nn.Module):
         Args:
             x: (input_seq_len x batch) input tokens (indices in range [0, input_vocab_size))
             x_lengths: (batch) lengths of the (unpadded) input sequences, used for masking
+                important: in training mode, the length of all source sequences in a batch must be of the same length
+                    (i.e. no padding for the horizontal dimension)
             y (only if training): (output_seq_len x batch) correct output tokens
                                   (indices in range [0, output_vocab_size))
             y_lengths (only if training): (batch) lengths of the (unpadded) correct output sequences, used for masking
@@ -71,11 +73,15 @@ class LSTM2d(nn.Module):
 
         if self.training:
             assert y is not None, 'You must supply the correct tokens in training mode.'
-            return self.__training_forward(h=h, h_lengths=x_lengths, y=y, y_lengths=y_lengths)
+            assert y_lengths is not None, 'You must supply the lengths of the target sentences in training mode.'
+            assert x_lengths.min().item() == x_lengths.max().item() == x.size()[0],\
+                'In training mode, all input sequences must be of the same length.'
+
+            return self.__training_forward(h=h, y=y, y_lengths=y_lengths)
         else:
             return self.__inference_forward(h=h, h_lengths=x_lengths)
 
-    def __training_forward(self, h, h_lengths, y, y_lengths):
+    def __training_forward(self, h, y, y_lengths):
         """
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
         advance.
@@ -85,7 +91,8 @@ class LSTM2d(nn.Module):
 
         Args:
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
-            h_lengths: (batch) lengths of the (unpadded) input sequences, used for masking
+                important: in training mode, the length of all source sequences in a batch must be of the same length
+                    (i.e. no padding for the horizontal dimension, all sequences have length exactly input_seq_len)
             y: (output_seq_len x batch) correct output tokens (indices in range [0, output_vocab_size))
             y_lengths: (batch) lengths of the (unpadded) correct output sequences, used for masking
 
@@ -142,21 +149,10 @@ class LSTM2d(nn.Module):
             c_next = c_next.view(diagonal_len, batch_size, self.state_dim_2d)
             s_next = s_next.view(diagonal_len, batch_size, self.state_dim_2d)
 
-            # create horizontal mask according to the lengths so we get the correct predictions in the end
-            # TODO: vectorize this
-            hor_mask = torch.ones(diagonal_len, batch_size, self.state_dim_2d)
-            for i in range(batch_size):
-                hor_len = y_lengths[i].item()
-
-                if hor_len < hor_to:
-                    hor_mask[hor_len:hor_to, i, :] = 0
-
-            # store new hidden and cell states at the right indices for the next diagonals to use
-            (max_from, max_to) = (ver_from, ver_to) if max_len == input_seq_len else (hor_from, hor_to)
-            s_diag[max_from:max_to, :, :] = hor_mask * s_next[:, :, :]\
-                                            + (1 - hor_mask) * s_diag[max_from:max_to, :, :].clone()
-            c_diag[max_from:max_to, :, :] = hor_mask * c_next[:, :, :]\
-                                            + (1 - hor_mask) * c_diag[max_from:max_to, :, :].clone()
+            # store new hidden and cell states at the right indices for the next diagonal(s) to use
+            (max_from, max_to) = (ver_from, ver_to) if max_len == output_seq_len else (hor_from, hor_to)
+            s_diag[max_from:max_to, :, :] = s_next[:, :, :]
+            c_diag[max_from:max_to, :, :] = c_next[:, :, :]
 
             if needs_to_store_cell_states_separately and diagonal_num >= max_len - 1:
                 # store the last hidden state of this diagonal for the output prediction (later)
@@ -199,7 +195,7 @@ class LSTM2d(nn.Module):
         # result tensor (will later be truncated to the longest generated sequence in the batch in the first dimension)
         y_pred = torch.zeros(self.max_output_len, batch_size, self.output_vocab_size)
 
-        # create horizontal mask tensor based on h_lengths to handle padding # TODO vectorized implementation
+        # create horizontal mask tensor based on h_lengths to handle padding
         hor_mask = torch.zeros(batch_size, input_seq_len)
         for i in range(batch_size):
             hor_mask[i, :h_lengths[i]] = 1
