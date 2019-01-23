@@ -102,7 +102,6 @@ class LSTM2d(nn.Module):
                 important: in training mode, the length of all source sequences in a batch must be of the same length
                     (i.e. no padding for the horizontal dimension, all sequences have length exactly input_seq_len)
             y: (output_seq_len x batch) correct output tokens (indices in range [0, output_vocab_size))
-            y_lengths: (batch) lengths of the (unpadded) correct output sequences, used for masking
 
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size)

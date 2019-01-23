@@ -1,13 +1,14 @@
 from data.iwslt14_small.dataset_utils import create_dataset, BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
 from model.lstm2d import LSTM2d
-from data.sorted_batch_iterator import SortedBatchIterator
+from random import shuffle
+from data.data_utils import create_homogenous_batches
 import argparse
 import torch
 import numpy as np
 
 # define options
 parser = argparse.ArgumentParser(description='train_iwslt14_small.py')
-parser.add_argument('-batch_size', default=3,
+parser.add_argument('-batch_size', default=32,
                     help='The batch size to use for training and inference.')
 parser.add_argument('-epochs', default=5,
                     help='The number of epochs to train.')
@@ -44,9 +45,8 @@ def main():
         pad_token=pad_token
     )
 
+    train_batches = create_homogenous_batches(dataset.train, max_batch_size=options.batch_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
-    train_iter = SortedBatchIterator(dataset.train, sort_key=lambda example: (-len(example.src), -len(example.tgt)),
-                                     batch_size=options.batch_size, shuffle=options.shuffle)
 
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
@@ -54,7 +54,10 @@ def main():
         loss_history = []
         model.train()
 
-        for i, batch in enumerate(train_iter):
+        if options.shuffle:
+            shuffle(train_batches)
+
+        for i, batch in enumerate(train_batches):
             optimizer.zero_grad()
             x, x_lengths = batch.src
             y = batch.tgt
