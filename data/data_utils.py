@@ -7,15 +7,15 @@ Contains utility functions for working with any NMT dataset, based on torchtext.
 """
 
 
-def create_homogenous_batches(dataset: Dataset, max_batch_size: int, key_fn=lambda ex: -len(ex.src),
+def create_homogenous_batches(dataset: Dataset, max_batch_size: int,
+                              key_fn=lambda ex: -len(ex.src),
                               filter_fn=lambda ex: len(ex.src) > 0) -> List[Batch]:
     """
-    Creates a list of batches such that for each batch b it holds:
+    Creates a list of batches such that for each batch b it holds that:
         - b contains at least one and at most max_batch_size examples
         - for any two examples e1, e2 in b: key_fn(e1) == key_fn(e2)
         - b does not contain any example e for which filter_fn(e) == False
-
-    In addition, the batches b are sorted by key_fn(e) for any e in b.
+    In addition, the batches b are sorted by (increasing) key_fn(e) for any e in b.
 
     Args:
         dataset: the dataset to take the batches from

@@ -1,11 +1,8 @@
-import nltk
 import pandas as pd
 from torchtext.data import Field, TabularDataset
 from typing import List, Tuple
 from collections import namedtuple
 import os
-
-nltk.download('punkt')
 
 """
 Helper functions to preprocess / load the small iwslt14 eng-deu NMT dataset from

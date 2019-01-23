@@ -83,11 +83,11 @@ def main():
 
 
 def test_model(model, dataset):
-    example_sentence = 'Good morning , how are you ?'
+    example_sentence = 'Good morning how are you ?'
     tokens = example_sentence.split(' ')
     x = torch.tensor([[dataset.src.vocab.stoi[w] for w in tokens]], dtype=torch.long).t()
     x_lengths = torch.tensor([len(tokens)], dtype=torch.long)
-    pred = model.forward(x, x_lengths)
+    pred = model.forward(x=x, x_lengths=x_lengths)
 
     predicted_tokens = list(torch.argmax(pred, dim=-1).view(-1))
     output_sentence = ' '.join([dataset.tgt.vocab.itos[i] for i in predicted_tokens])

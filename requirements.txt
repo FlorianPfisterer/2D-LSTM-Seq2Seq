@@ -1,5 +1,4 @@
 torch
 torchtext
 numpy
-nltk
 pandas
