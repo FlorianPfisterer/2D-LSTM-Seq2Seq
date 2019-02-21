@@ -5,6 +5,10 @@ from data.data_utils import create_homogenous_batches
 import argparse
 import torch
 import numpy as np
+import os
+
+ROOT_DIR = os.path.dirname(os.path.abspath(os.path.join(__file__, os.pardir)))
+CHECKPOINT_DIR = ROOT_DIR + '/checkpoints'
 
 # define options
 parser = argparse.ArgumentParser(description='train_iwslt14_small.py')
@@ -14,9 +18,9 @@ parser.add_argument('-epochs', default=5,
                     help='The number of epochs to train.')
 parser.add_argument('-shuffle', default=True,
                     help='Whether or not to shuffle the training examples.')
-parser.add_argument('-lr', default=1e-3,
+parser.add_argument('-lr', default=0.0005,
                     help='The learning rate to use.')
-parser.add_argument('-embed_dim', default=100,
+parser.add_argument('-embed_dim', default=128,
                     help='The dimension of the embedding vectors for both the source and target language.')
 parser.add_argument('-encoder_state_dim', default=64,
                     help='The dimension of the bidirectional encoder LSTM states.')
@@ -81,6 +85,8 @@ def main():
                 test_model(model, dataset)
                 model.train()
 
+        save_checkpoint(model, optimizer, epoch)
+
 
 def test_model(model, dataset):
     example_sentence = 'Good morning how are you ?'
@@ -92,6 +98,20 @@ def test_model(model, dataset):
     predicted_tokens = list(torch.argmax(pred, dim=-1).view(-1))
     output_sentence = ' '.join([dataset.tgt.vocab.itos[i] for i in predicted_tokens])
     print('translate(\"{}\") ==> \"{}\"'.format(example_sentence, output_sentence))
+
+
+def save_checkpoint(model, optimizer, epoch: int):
+    if not os.path.exists(CHECKPOINT_DIR):
+        os.mkdir(CHECKPOINT_DIR)
+
+    path = os.path.join(CHECKPOINT_DIR, '{}_epoch_{}.pt'.format(model.name, epoch))
+    checkpoint = {
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict()
+    }
+    torch.save(checkpoint, path)
+
+    print('Saved checkpoint for \'{}\' at epoch #{}'.format(model.name, epoch))
 
 
 if __name__ == '__main__':

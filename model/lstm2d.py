@@ -27,6 +27,8 @@ class LSTM2d(nn.Module):
         bos_token: the token (index) representing the beginning of a sentence in the output vocabulary
         eos_token: the token (index) representing the end of a sentence in the output vocabulary
     """
+    name = "lstm2d-plain"
+
     def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, input_vocab_size, output_vocab_size,
                  max_output_len=100, bos_token=1, eos_token=2, pad_token=0):
         super(LSTM2d, self).__init__()
