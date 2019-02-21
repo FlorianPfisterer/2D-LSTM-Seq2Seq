@@ -95,7 +95,7 @@ class LSTM2d(nn.Module):
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
         advance.
         Processes the input in a diagonal-wise fashion, as described in the paper
-            Handwriting Recognition with Large Multidimensional Long Short-Term Memory Recurrent Neural Networks
+            Handwriting Recognition with Large Multtidimensional Long Short-Term Memory Recurrent Neural Networks
             by Voigtlaender et. al.
 
         Args:
@@ -162,8 +162,7 @@ class LSTM2d(nn.Module):
             states_s[diag_range_x, diag_range_y, :, :] = s_next
             states_c[diag_range_x, diag_range_y, :, :] = c_next
 
-        # TODO calculate states for prediction
-        states_for_pred = []
+        states_for_pred = states_s[-1, 1:, :, :]        # this usually depends on the input padding per batch-example
         y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
         return y_pred
 
@@ -335,7 +334,7 @@ class LSTM2d(nn.Module):
         # indices of the current diagonal
         diag_x_range = ver_x_range
         diag_y_range = hor_y_range
-        diag_ranges = (diag_x_range, diag_y_range)
+        diag_ranges = (autorange(diag_x_range), autorange(diag_y_range))
 
         return ver_ranges, hor_ranges, diag_ranges
 
