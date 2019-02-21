@@ -118,14 +118,11 @@ class LSTM2d(nn.Module):
         y = torch.cat([start_tokens, y[:-1, :]], dim=0)
         y_emb = self.output_embedding.forward(y)   # (output_seq_len x batch x embed_dim)
 
-        min_len = min(input_seq_len, output_seq_len)
-        max_len = max(input_seq_len, output_seq_len)
-
         # store hidden and cell states, at the beginning filled with zeros
         states_s = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d)
         states_c = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d)
 
-        for diagonal_num in range(min_len + max_len - 1):
+        for diagonal_num in range(input_seq_len + output_seq_len - 1):
             (ver_from, ver_to), (hor_from, hor_to) = LSTM2d.__calculate_input_ranges(diagonal_num=diagonal_num,
                                                                                      input_seq_len=input_seq_len,
                                                                                      output_seq_len=output_seq_len)
@@ -162,6 +159,7 @@ class LSTM2d(nn.Module):
             states_s[diag_range_x, diag_range_y, :, :] = s_next
             states_c[diag_range_x, diag_range_y, :, :] = c_next
 
+        # for the prediction, takes the last (-1) column of states and all but the first (1:) row
         states_for_pred = states_s[-1, 1:, :, :]        # this usually depends on the input padding per batch-example
         y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
         return y_pred
@@ -311,7 +309,20 @@ class LSTM2d(nn.Module):
 
     @staticmethod
     def __calculate_state_ranges(input_range: Tuple[int, int], output_range: Tuple[int, int]):
-        # helper function
+        """
+        Calculates the indexing ranges for the current diagonal, based on the input and output ranges:
+        Args:
+            input_range: a tuple of two values (min, max) that represents the range of values taken for the input at
+                the current diagonal
+            output_range: a tuple of two values (min, max) that represents the range of values taken for the (previous)
+                output at the current diagonal
+
+        Returns: three tuples (x_list, y_list) of two integer lists each:
+            - ver_ranges: the x and y coordinates for the vertical previous states
+            - hor_ranges: the x and y coordinates for the horizontal previous states
+            - diag_ranges: the x and y coordinates for the current diagonal (to store the new states correctly)
+        """
+        # helper function for "negative" ranges
         def autorange(minmax: Tuple[int, int]):
             min, max = minmax
             if min > max:
