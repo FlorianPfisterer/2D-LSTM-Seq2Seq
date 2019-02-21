@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from typing import Tuple
 from model.lstm2d_cell import LSTM2dCell
 
 
@@ -94,7 +95,7 @@ class LSTM2d(nn.Module):
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
         advance.
         Processes the input in a diagonal-wise fashion, as described in the paper
-            Handwriting Recognition with Large Multidimensional Long Short-Term Memory Recurrent Neural Networks
+            Handwriting Recognition with Large Multtidimensional Long Short-Term Memory Recurrent Neural Networks
             by Voigtlaender et. al.
 
         Args:
@@ -117,37 +118,35 @@ class LSTM2d(nn.Module):
         y = torch.cat([start_tokens, y[:-1, :]], dim=0)
         y_emb = self.output_embedding.forward(y)   # (output_seq_len x batch x embed_dim)
 
-        min_len = min(input_seq_len, output_seq_len)
-        max_len = max(input_seq_len, output_seq_len)
+        # store hidden and cell states, at the beginning filled with zeros
+        states_s = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d)
+        states_c = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d)
 
-        # store hidden and cell states from the latest previous diagonals, at the beginning filled with zeros
-        s_diag = torch.zeros(max_len, batch_size, self.state_dim_2d)
-        c_diag = torch.zeros(max_len, batch_size, self.state_dim_2d)
-
-        # if the bigger dimension is the input dimension, we need to store the hidden states from the last cells
-        # in the last diagonals (from diagonal_num = input_seq_len-1 to the last one)
-        needs_to_store_cell_states_separately = max_len != min_len and max_len == input_seq_len
-        if needs_to_store_cell_states_separately:
-            output_hidden_states = torch.zeros(output_seq_len, batch_size, self.state_dim_2d)
-
-        for diagonal_num in range(min_len + max_len - 1):
+        for diagonal_num in range(input_seq_len + output_seq_len - 1):
             (ver_from, ver_to), (hor_from, hor_to) = LSTM2d.__calculate_input_ranges(diagonal_num=diagonal_num,
                                                                                      input_seq_len=input_seq_len,
                                                                                      output_seq_len=output_seq_len)
+
+            ver_state_ranges, hor_state_ranges, diag_ranges = LSTM2d.__calculate_state_ranges((ver_from, ver_to),
+                                                                                              (hor_from, hor_to))
+            ver_range_x, ver_range_y = ver_state_ranges
+            hor_range_x, hor_range_y = hor_state_ranges
+            diag_range_x, diag_range_y = diag_ranges
+
             diagonal_len = ver_to - ver_from  # (always equals hor_to - hor_from)
 
             # calculate x input for this diagonal
-            # treat diagonal as batches and reshape inputs accordingly
+            # treat diagonal as though it was a larger batch and reshape inputs accordingly
             new_batch_size = diagonal_len * batch_size
             h_current = h[ver_from:ver_to, :, :].view(new_batch_size, h.size()[-1])
             y_current = y_emb[hor_from:hor_to, :, :].view(new_batch_size, y_emb.size()[-1])
             x_current = torch.cat([h_current, y_current], dim=-1)   # shape (batch*diagonal_len x input_dim)
 
             # calculate previous hidden & cell states for this diagonal
-            s_prev_hor = s_diag[hor_from:hor_to, :, :].clone().view(new_batch_size, self.state_dim_2d)
-            s_prev_ver = s_diag[ver_from:ver_to, :, :].clone().view(new_batch_size, self.state_dim_2d)
-            c_prev_hor = c_diag[hor_from:hor_to, :, :].clone().view(new_batch_size, self.state_dim_2d)
-            c_prev_ver = c_diag[ver_from:ver_to, :, :].clone().view(new_batch_size, self.state_dim_2d)
+            s_prev_hor = states_s[hor_range_x, hor_range_y, :, :].view(new_batch_size, self.state_dim_2d)
+            c_prev_hor = states_c[hor_range_x, hor_range_y, :, :].view(new_batch_size, self.state_dim_2d)
+            s_prev_ver = states_s[ver_range_x, ver_range_y, :, :].view(new_batch_size, self.state_dim_2d)
+            c_prev_ver = states_c[ver_range_x, ver_range_y, :, :].view(new_batch_size, self.state_dim_2d)
 
             # run batched computation for this diagonal
             c_next, s_next = self.cell2d.forward(x_current, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
@@ -157,21 +156,11 @@ class LSTM2d(nn.Module):
             s_next = s_next.view(diagonal_len, batch_size, self.state_dim_2d)
 
             # store new hidden and cell states at the right indices for the next diagonal(s) to use
-            (max_from, max_to) = (ver_from, ver_to) if max_len == output_seq_len else (hor_from, hor_to)
-            s_diag[max_from:max_to, :, :] = s_next[:, :, :]
-            c_diag[max_from:max_to, :, :] = c_next[:, :, :]
+            states_s[diag_range_x, diag_range_y, :, :] = s_next
+            states_c[diag_range_x, diag_range_y, :, :] = c_next
 
-            if needs_to_store_cell_states_separately and diagonal_num >= max_len - 1:
-                # store the last hidden state of this diagonal for the output prediction (later)
-                output_hidden_states[diagonal_num - (max_len - 1), :, :] = s_diag[-1, :, :]
-
-        # now compute the predicted outputs based on the hidden states (stored separately or in s_diag)
-        if needs_to_store_cell_states_separately:
-            states_for_pred = output_hidden_states
-        else:
-            states_for_pred = s_diag[:, :, :]
-        assert list(states_for_pred.shape) == [output_seq_len, batch_size, self.state_dim_2d]
-
+        # for the prediction, takes the last (-1) column of states and all but the first (1:) row
+        states_for_pred = states_s[-1, 1:, :, :]        # this usually depends on the input padding per batch-example
         y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
         return y_pred
 
@@ -317,4 +306,49 @@ class LSTM2d(nn.Module):
             output_range = min_range
 
         return input_range, output_range
+
+    @staticmethod
+    def __calculate_state_ranges(input_range: Tuple[int, int], output_range: Tuple[int, int]):
+        """
+        Calculates the indexing ranges for the current diagonal, based on the input and output ranges:
+        Args:
+            input_range: a tuple of two values (min, max) that represents the range of values taken for the input at
+                the current diagonal
+            output_range: a tuple of two values (min, max) that represents the range of values taken for the (previous)
+                output at the current diagonal
+
+        Returns: three tuples (x_list, y_list) of two integer lists each:
+            - ver_ranges: the x and y coordinates for the vertical previous states
+            - hor_ranges: the x and y coordinates for the horizontal previous states
+            - diag_ranges: the x and y coordinates for the current diagonal (to store the new states correctly)
+        """
+        # helper function for "negative" ranges
+        def autorange(minmax: Tuple[int, int]):
+            min, max = minmax
+            if min > max:
+                return list(reversed(range(max+1, min+1)))
+            return list(range(min, max))
+
+        ver_from, ver_to = input_range
+        hor_from, hor_to = output_range
+
+        # vertical range
+        ver_x_range = (ver_from + 1, ver_to + 1)
+        ver_y_range = (hor_to - 1, hor_from - 1)
+        ver_ranges = (autorange(ver_x_range), autorange(ver_y_range))
+
+        # horizontal range
+        hor_x_range = input_range
+        hor_y_range = (hor_to, hor_from)
+        hor_ranges = (autorange(hor_x_range), autorange(hor_y_range))
+
+        # indices of the current diagonal
+        diag_x_range = ver_x_range
+        diag_y_range = hor_y_range
+        diag_ranges = (autorange(diag_x_range), autorange(diag_y_range))
+
+        return ver_ranges, hor_ranges, diag_ranges
+
+
+
 
