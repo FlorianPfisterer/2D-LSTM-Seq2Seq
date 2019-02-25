@@ -49,6 +49,9 @@ def main():
         pad_token=pad_token
     )
 
+    if torch.cuda.is_available():
+        model = model.cuda()
+
     train_batches = create_homogenous_batches(dataset.train, max_batch_size=options.batch_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
 
@@ -68,6 +71,11 @@ def main():
             y = y[1:, :]                # remove <sos> token (the net should not generate this)
 
             x_lengths[x_lengths <= 0] = 1   # TODO -- crashes for values <= 0
+
+            if torch.cuda.is_available():
+                x = x.cuda()
+                y = y.cuda()
+                x_lengths = x_lengths.cuda()
 
             y_pred = model.forward(x=x, x_lengths=x_lengths, y=y)
             loss_value = model.loss(y_pred, y)
@@ -93,8 +101,11 @@ def test_model(model, dataset):
     tokens = example_sentence.split(' ')
     x = torch.tensor([[dataset.src.vocab.stoi[w] for w in tokens]], dtype=torch.long).t()
     x_lengths = torch.tensor([len(tokens)], dtype=torch.long)
-    pred = model.forward(x=x, x_lengths=x_lengths)
+    if torch.cuda.is_available():
+        x = x.cuda()
+        x_lengths = x_lengths.cuda()
 
+    pred = model.forward(x=x, x_lengths=x_lengths)
     predicted_tokens = list(torch.argmax(pred, dim=-1).view(-1))
     output_sentence = ' '.join([dataset.tgt.vocab.itos[i] for i in predicted_tokens])
     print('translate(\"{}\") ==> \"{}\"'.format(example_sentence, output_sentence))
