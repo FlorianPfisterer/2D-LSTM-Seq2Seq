@@ -4,3 +4,9 @@ This repository contains a PyTorch implementation of the 2D-seq2seq model for NM
 by Bahar et. al.
 
 ... **Work in Progress** ...
+
+### Run Training
+Run training by navigating to the root folder, activating the `conda` environment and then running 
+```bash
+python -m main.train_iwslt14_small
+```
