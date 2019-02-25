@@ -12,21 +12,29 @@ CHECKPOINT_DIR = ROOT_DIR + '/checkpoints'
 
 # define options
 parser = argparse.ArgumentParser(description='train_iwslt14_small.py')
-parser.add_argument('-batch_size', default=32,
+parser.add_argument('--batch_size', type=int, default=32,
                     help='The batch size to use for training and inference.')
-parser.add_argument('-epochs', default=5,
+parser.add_argument('--epochs', type=int, default=5,
                     help='The number of epochs to train.')
-parser.add_argument('-shuffle', default=True,
+parser.add_argument('--shuffle', type=bool, default=True,
                     help='Whether or not to shuffle the training examples.')
-parser.add_argument('-lr', default=0.0005,
+parser.add_argument('--lr', type=float, default=0.0005,
                     help='The learning rate to use.')
-parser.add_argument('-embed_dim', default=128,
+parser.add_argument('--embed_dim', type=int, default=128,
                     help='The dimension of the embedding vectors for both the source and target language.')
-parser.add_argument('-encoder_state_dim', default=64,
+parser.add_argument('--encoder_state_dim', type=int, default=64,
                     help='The dimension of the bidirectional encoder LSTM states.')
-parser.add_argument('-state_2d_dim', default=128,
+parser.add_argument('--state_2d_dim', type=int, default=128,
                     help='The dimension of the 2D-LSTM hidden & cell states.')
+parser.add_argument('--disable_cuda', type=int, default=False, action='store_true',
+                    help='Disable CUDA (i.e. use the CPU for all computations)')
 options = parser.parse_args()
+options.device = None
+if not options.disable_cuda and torch.cuda.is_available():
+    options.device = torch.device('cuda')
+else:
+    options.device = torch.device('cpu')
+print('Using device: {}'.format(options.device))
 
 
 def main():
@@ -46,11 +54,9 @@ def main():
         output_vocab_size=tgt_vocab_size,
         bos_token=bos_token,
         eos_token=eos_token,
-        pad_token=pad_token
+        pad_token=pad_token,
+        device=options.device
     )
-
-    if torch.cuda.is_available():
-        model = model.cuda()
 
     train_batches = create_homogenous_batches(dataset.train, max_batch_size=options.batch_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
@@ -71,11 +77,6 @@ def main():
             y = y[1:, :]                # remove <sos> token (the net should not generate this)
 
             x_lengths[x_lengths <= 0] = 1   # TODO -- crashes for values <= 0
-
-            if torch.cuda.is_available():
-                x = x.cuda()
-                y = y.cuda()
-                x_lengths = x_lengths.cuda()
 
             y_pred = model.forward(x=x, x_lengths=x_lengths, y=y)
             loss_value = model.loss(y_pred, y)
@@ -101,11 +102,8 @@ def test_model(model, dataset):
     tokens = example_sentence.split(' ')
     x = torch.tensor([[dataset.src.vocab.stoi[w] for w in tokens]], dtype=torch.long).t()
     x_lengths = torch.tensor([len(tokens)], dtype=torch.long)
-    if torch.cuda.is_available():
-        x = x.cuda()
-        x_lengths = x_lengths.cuda()
-
     pred = model.forward(x=x, x_lengths=x_lengths)
+
     predicted_tokens = list(torch.argmax(pred, dim=-1).view(-1))
     output_sentence = ' '.join([dataset.tgt.vocab.itos[i] for i in predicted_tokens])
     print('translate(\"{}\") ==> \"{}\"'.format(example_sentence, output_sentence))

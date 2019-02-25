@@ -21,6 +21,8 @@ class LSTM2d(nn.Module):
         input_vocab_size: size of the input vocabulary (i.e. number of embedding vectors in the source language)
         output_vocab_size: size of the output vocabulary (i.e. number of embedding vectors in the target language)
 
+        device: the device (CPU / GPU) to run all computations on / store tensors on
+
         max_output_len: the maximum number of tokens to generate for an output sequence in inference mode until an
                         <eos> token is generated
 
@@ -29,7 +31,7 @@ class LSTM2d(nn.Module):
     """
     name = "lstm2d-plain"
 
-    def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, input_vocab_size, output_vocab_size,
+    def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, input_vocab_size, output_vocab_size, device,
                  max_output_len=100, bos_token=1, eos_token=2, pad_token=0):
         super(LSTM2d, self).__init__()
 
@@ -39,23 +41,25 @@ class LSTM2d(nn.Module):
         self.input_vocab_size = input_vocab_size
         self.output_vocab_size = output_vocab_size
         self.max_output_len = max_output_len
+        self.device = device
+
         self.bos_token = bos_token
         self.eos_token = eos_token
         self.pad_token = pad_token
 
-        self.input_embedding = nn.Embedding(num_embeddings=input_vocab_size, embedding_dim=embed_dim)
-        self.output_embedding = nn.Embedding(num_embeddings=output_vocab_size, embedding_dim=embed_dim)
+        self.input_embedding = nn.Embedding(num_embeddings=input_vocab_size, embedding_dim=embed_dim).to(self.device)
+        self.output_embedding = nn.Embedding(num_embeddings=output_vocab_size, embedding_dim=embed_dim).to(self.device)
 
         # input to the 2d-cell is a concatenation of the hidden encoder states h_j and the embedded output tokens y_i-1
         cell_input_dim = 2*encoder_state_dim + embed_dim    # 2*encoder_state_dim since it's bidirectional
-        self.cell2d = LSTM2dCell(cell_input_dim, state_dim_2d)
+        self.cell2d = LSTM2dCell(cell_input_dim, state_dim_2d, device=self.device)
 
         # final output layer for next predicted token
-        self.logits = nn.Linear(in_features=state_dim_2d, out_features=output_vocab_size)
-        self.loss_function = torch.nn.CrossEntropyLoss(ignore_index=pad_token)
+        self.logits = nn.Linear(in_features=state_dim_2d, out_features=output_vocab_size).to(self.device)
+        self.loss_function = torch.nn.CrossEntropyLoss(ignore_index=pad_token).to(self.device)
 
         # the encoder LSTM goes over the input sequence x and provides the hidden states h_j for the 2d-LSTM
-        self.encoder = nn.LSTM(input_size=embed_dim, hidden_size=encoder_state_dim, bidirectional=True)
+        self.encoder = nn.LSTM(input_size=embed_dim, hidden_size=encoder_state_dim, bidirectional=True).to(self.device)
 
     def forward(self, x, x_lengths, y=None):
         """
@@ -73,10 +77,14 @@ class LSTM2d(nn.Module):
             y_pred: (output_seq_len x batch x output_vocab_size)
                 predicted output sequence (logits for output_vocab_size)
         """
+        x = x.to(self.device)
+        x_lengths = x_lengths.to(self.device)
+
         h = self.__encoder_lstm(x, x_lengths)
 
         if self.training:
             assert y is not None, 'You must supply the correct tokens in training mode.'
+            y = y.to(self.device)
             return self.__training_forward(h=h, y=y)
         else:
             return self.__inference_forward(h=h, h_lengths=x_lengths)
@@ -90,6 +98,8 @@ class LSTM2d(nn.Module):
 
         Returns: () scalar-tensor representing the cross-entropy loss between y_pred and y_target
         """
+        y_pred = y_pred.to(self.device)
+        y_target = y_target.to(self.device)
         return self.loss_function(y_pred.view(-1, self.output_vocab_size), y_target.view(-1))
 
     def __training_forward(self, h, y):
@@ -116,13 +126,13 @@ class LSTM2d(nn.Module):
 
         # obtain embedding representations for the correct tokens
         # shift by one token (add <sos> token at the beginning of the sentences and remove <eos> token at the end)
-        start_tokens = torch.tensor([self.bos_token], dtype=y.dtype).repeat(batch_size, 1).t()
+        start_tokens = torch.tensor([self.bos_token], dtype=y.dtype, device=self.device).repeat(batch_size, 1).t()
         y = torch.cat([start_tokens, y[:-1, :]], dim=0)
         y_emb = self.output_embedding.forward(y)   # (output_seq_len x batch x embed_dim)
 
         # store hidden and cell states, at the beginning filled with zeros
-        states_s = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d)
-        states_c = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d)
+        states_s = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d, device=self.device)
+        states_c = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d, device=self.device)
 
         for diagonal_num in range(input_seq_len + output_seq_len - 1):
             (ver_from, ver_to), (hor_from, hor_to) = LSTM2d.__calculate_input_ranges(diagonal_num=diagonal_num,
@@ -183,29 +193,29 @@ class LSTM2d(nn.Module):
         input_seq_len = h.size()[0]
 
         # initialize y to (embedded) start tokens
-        y_i = torch.tensor([self.bos_token], dtype=torch.long).repeat(batch_size)
+        y_i = torch.tensor([self.bos_token], dtype=torch.long, device=self.device).repeat(batch_size)
         y_i = self.output_embedding.forward(y_i)
 
         # hidden states and cell states at previous vertical step i-1
-        s_prev_i = torch.zeros(input_seq_len, batch_size, self.state_dim_2d)
-        c_prev_i = torch.zeros(input_seq_len, batch_size, self.state_dim_2d)
+        s_prev_i = torch.zeros(input_seq_len, batch_size, self.state_dim_2d, device=self.device)
+        c_prev_i = torch.zeros(input_seq_len, batch_size, self.state_dim_2d, device=self.device)
 
         # result tensor (will later be truncated to the longest generated sequence in the batch in the first dimension)
-        y_pred = torch.zeros(self.max_output_len, batch_size, self.output_vocab_size)
+        y_pred = torch.zeros(self.max_output_len, batch_size, self.output_vocab_size, device=self.device)
 
         # create horizontal mask tensor based on h_lengths to handle padding
-        hor_mask = torch.zeros(batch_size, input_seq_len)
+        hor_mask = torch.zeros(batch_size, input_seq_len, device=self.device)
         for i in range(batch_size):
             hor_mask[i, :h_lengths[i]] = 1
 
         # go through each decoder output step, until either the maximum length is reached or all sentences are <eos>-ed
         i = 0
         num_seq_left = batch_size
-        active_indices = torch.tensor(list(range(batch_size)))
+        active_indices = torch.tensor(list(range(batch_size)), device=self.device)
         while i < self.max_output_len and num_seq_left > 0:
             # initialize previous horizontal hidden state and cell state
-            s_prev_hor = torch.zeros(num_seq_left, self.state_dim_2d)
-            c_prev_hor = torch.zeros(num_seq_left, self.state_dim_2d)
+            s_prev_hor = torch.zeros(num_seq_left, self.state_dim_2d, device=self.device)
+            c_prev_hor = torch.zeros(num_seq_left, self.state_dim_2d, device=self.device)
 
             for j in range(input_seq_len):
                 # input to 2d-cell is concatenation of encoder hidden state h_j and last generated token y_i
@@ -227,7 +237,8 @@ class LSTM2d(nn.Module):
             y_pred[i, active_indices, :] = y_pred_i
 
             # remove sentences from the batch if the argmax prediction is an <eos> token
-            index_map = torch.ones(batch_size, dtype=torch.long) + self.eos_token     # no value is equal to eos_token
+            # no value is equal to eos_token
+            index_map = torch.ones(batch_size, dtype=torch.long, device=self.device) + self.eos_token
             argmax_tokens = torch.argmax(y_pred_i, dim=-1)          # (num_seq_left)
             index_map[active_indices] = argmax_tokens               # set the correct num_seq_left predictions
 

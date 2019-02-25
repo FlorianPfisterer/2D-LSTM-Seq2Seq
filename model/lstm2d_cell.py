@@ -11,19 +11,21 @@ class LSTM2dCell(nn.Module):
     Args:
         input_dim: the input dimension (i.e. second dimension of x)
         state_dim: dimension of the hidden and cell state of this LSTM unit
+        device: the device (CPU / GPU) to run all computations on / store tensors on
     """
 
-    def __init__(self, input_dim, state_dim):
+    def __init__(self, input_dim, state_dim, device):
         super(LSTM2dCell, self).__init__()
         self.input_dim = input_dim
         self.state_dim = state_dim
+        self.device = device
 
         # input to state
-        self.W_x = nn.Linear(self.input_dim, self.state_dim * 5)
+        self.W_x = nn.Linear(self.input_dim, self.state_dim * 5).to(self.device)
         # previous horizontal hidden state to state
-        self.W_hor = nn.Linear(self.state_dim, self.state_dim * 5)
+        self.W_hor = nn.Linear(self.state_dim, self.state_dim * 5).to(self.device)
         # previous vertical hidden state to state
-        self.W_ver = nn.Linear(self.state_dim, self.state_dim * 5)
+        self.W_ver = nn.Linear(self.state_dim, self.state_dim * 5).to(self.device)
 
     def forward(self, x, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver):
         """
