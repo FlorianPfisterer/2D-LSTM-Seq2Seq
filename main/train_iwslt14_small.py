@@ -26,7 +26,7 @@ parser.add_argument('--encoder_state_dim', type=int, default=64,
                     help='The dimension of the bidirectional encoder LSTM states.')
 parser.add_argument('--state_2d_dim', type=int, default=128,
                     help='The dimension of the 2D-LSTM hidden & cell states.')
-parser.add_argument('--disable_cuda', type=int, default=False, action='store_true',
+parser.add_argument('--disable_cuda', default=False, action='store_true',
                     help='Disable CUDA (i.e. use the CPU for all computations)')
 options = parser.parse_args()
 options.device = None
@@ -61,6 +61,13 @@ def main():
     train_batches = create_homogenous_batches(dataset.train, max_batch_size=options.batch_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
 
+    restore_from_checkpoint(model, optimizer, epoch=237)
+    model.eval()
+    validate_model(model, dataset)
+    model.train()
+
+    exit(0)
+
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
 
@@ -94,7 +101,7 @@ def main():
                 test_model(model, dataset)
                 model.train()
 
-        save_checkpoint(model, optimizer, epoch)
+        # save_checkpoint(model, optimizer, epoch)
 
 
 def test_model(model, dataset):
@@ -121,6 +128,36 @@ def save_checkpoint(model, optimizer, epoch: int):
     torch.save(checkpoint, path)
 
     print('Saved checkpoint for \'{}\' at epoch #{}'.format(model.name, epoch))
+
+
+def validate_model(model, dataset):
+    batches = create_homogenous_batches(dataset.val, max_batch_size=options.batch_size)
+    loss_history = []
+
+    for i, batch in enumerate(batches):
+        x, x_lengths = batch.src
+        y = batch.tgt[1:, :]    # remove <sos> token (the net should not generate this)
+        x_lengths[x_lengths <= 0] = 1
+
+        y_pred = model.forward(x=x, x_lengths=x_lengths)
+        # y_argmax = torch.argmax(y_pred, dim=-1)
+        loss_value = model.loss(y_pred, y)
+        loss_history.append(loss_value.item())
+
+    avg_loss = np.mean(loss_history)
+    print("Average loss on validation dataset: {}".format(avg_loss))
+
+
+def restore_from_checkpoint(model, optimizer, epoch: int):
+    path = os.path.join(CHECKPOINT_DIR, '{}_epoch_{}.pt'.format(model.name, epoch))
+    if torch.cuda.is_available():
+        checkpoint = torch.load(path)
+    else:
+        checkpoint = torch.load(path, map_location='cpu')
+    model.load_state_dict(checkpoint['model'])
+    optimizer.load_state_dict(checkpoint['optimizer'])
+
+    print('Restored checkpoint for \'{}\' at epoch #{}'.format(model.name, epoch))
 
 
 if __name__ == '__main__':
