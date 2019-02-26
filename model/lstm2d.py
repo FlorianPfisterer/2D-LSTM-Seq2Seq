@@ -73,6 +73,10 @@ class LSTM2d(nn.Module):
             y (only if training): (output_seq_len x batch) correct output tokens
                                   (indices in range [0, output_vocab_size))
 
+        Note:
+            - it is assumed that the last token of the input (x) is an <EOS> token
+            - it is assumed that in training mode the last token of the targets (y) is an <EOS> token
+
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size)
                 predicted output sequence (logits for output_vocab_size)
@@ -94,13 +98,34 @@ class LSTM2d(nn.Module):
         Returns the cross entropy loss value for the given predictions and targets, ignoring <pad>-targets.
         Args:
             y_pred: (output_seq_len x batch x output_vocab_size) predicted output sequence (float logits)
-            y_target: (output_seq_len x batch) target output tokens (long indices into output_seq_len)
+            y_target: (output_seq_len x batch) target output tokens (long indices into output_vocab_size)
 
         Returns: () scalar-tensor representing the cross-entropy loss between y_pred and y_target
         """
         y_pred = y_pred.to(self.device)
         y_target = y_target.to(self.device)
         return self.loss_function(y_pred.view(-1, self.output_vocab_size), y_target.view(-1))
+
+    def padded_loss(self, y_pred, y_target):
+        """
+        Returns the cross entropy loss value for the given predictions and targets, ignoring <pad>-targets,
+        and expanding the prediction
+        Args:
+            y_pred: (predicted_seq_len x batch x output_vocab_size) predicted output sequence (float logits)
+            y_target: (target_seq_len x batch) target output tokens (long indices into output_vocab_size)
+
+        Returns: () scalar-tensor representing the cross-entropy loss between y_pred and y_target
+        """
+        predicted_seq_len = y_pred.size()[0]
+        target_seq_len, batch = y_target.size()
+        diff = predicted_seq_len - target_seq_len
+        if diff > 0:      # pad the target
+            padding = torch.ones(diff, batch, dtype=y_target.dtype, device=self.device) * self.pad_token
+            y_target = torch.cat([y_target, padding], dim=0)
+        elif diff < 0:    # pad the prediction
+            padding = torch.zeros(abs(diff), batch, self.output_vocab_size, dtype=y_pred.dtype, device=self.device)
+            y_pred = torch.cat([y_pred, padding], dim=0)
+        return self.loss(y_pred, y_target)
 
     def __training_forward(self, h, y):
         """
@@ -125,7 +150,7 @@ class LSTM2d(nn.Module):
         output_seq_len = y.size()[0]
 
         # obtain embedding representations for the correct tokens
-        # shift by one token (add <sos> token at the beginning of the sentences and remove <eos> token at the end)
+        # shift by one token (add <sos> token at the beginning of the sentences)
         start_tokens = torch.tensor([self.bos_token], dtype=y.dtype, device=self.device).repeat(batch_size, 1).t()
         y = torch.cat([start_tokens, y[:-1, :]], dim=0)
         y_emb = self.output_embedding.forward(y)   # (output_seq_len x batch x embed_dim)
@@ -150,8 +175,8 @@ class LSTM2d(nn.Module):
             # calculate x input for this diagonal
             # treat diagonal as though it was a larger batch and reshape inputs accordingly
             new_batch_size = diagonal_len * batch_size
-            h_current = h[ver_from:ver_to, :, :].view(new_batch_size, h.size()[-1])
-            y_current = y_emb[hor_from:hor_to, :, :].view(new_batch_size, y_emb.size()[-1])
+            h_current = h[ver_from:ver_to, :, :].view(new_batch_size, 2*self.encoder_state_dim)
+            y_current = y_emb[hor_from:hor_to, :, :].view(new_batch_size, self.embed_dim)
             x_current = torch.cat([h_current, y_current], dim=-1)   # shape (batch*diagonal_len x input_dim)
 
             # calculate previous hidden & cell states for this diagonal
