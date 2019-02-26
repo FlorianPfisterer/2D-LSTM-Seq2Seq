@@ -22,11 +22,13 @@ class LSTM2dCellTest(TestCase):
         self.c_prev_hor = torch.randn(self.batch_size, self.cell_state_dim)
         self.c_prev_ver = torch.randn(self.batch_size, self.cell_state_dim)
 
+        self.device = torch.device('cpu')
+
     def test_dimensions(self):
         """
         Tests if the input and output dimensions of the cell are as expected.
         """
-        cell = LSTM2dCell(self.input_dim, self.cell_state_dim)
+        cell = LSTM2dCell(self.input_dim, self.cell_state_dim, self.device)
         c_ji, s_ji = cell.forward(x=self.x_j, s_prev_hor=self.s_prev_hor, s_prev_ver=self.s_prev_ver,
                                   c_prev_hor=self.c_prev_hor, c_prev_ver=self.c_prev_ver)
 
@@ -53,7 +55,7 @@ class LSTM2dCellTest(TestCase):
         toy_c_prev_hor = torch.Tensor([-10.1, 4.5, -0.1]).expand(toy_batch_size, toy_state_dim)
         toy_c_prev_ver = torch.Tensor([17, 1.001, -2.23]).expand(toy_batch_size, toy_state_dim)
 
-        cell = LSTM2dCell(toy_input_dim, toy_state_dim)
+        cell = LSTM2dCell(toy_input_dim, toy_state_dim, self.device)
         c, s = cell.forward(x=toy_x, s_prev_hor=toy_s_prev_hor, s_prev_ver=toy_s_prev_ver,
                             c_prev_hor=toy_c_prev_hor, c_prev_ver=toy_c_prev_ver)
 

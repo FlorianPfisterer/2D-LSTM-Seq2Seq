@@ -20,9 +20,10 @@ class LSTM2dInferenceTest(TestCase):
     def setUp(self):
         torch.manual_seed(42)
 
+        device = torch.device('cpu')
         self.lstm = LSTM2d(embed_dim=self.embed_dim, state_dim_2d=self.cell_state_dim,
                            encoder_state_dim=self.encoder_state_dim, input_vocab_size=self.input_vocab_size,
-                           output_vocab_size=self.output_vocab_size)
+                           output_vocab_size=self.output_vocab_size, device=device)
 
     def test_dimensions(self):
         """
