@@ -219,7 +219,7 @@ class LSTM2d(nn.Module):
 
         # initialize y to (embedded) start tokens
         y_i = torch.tensor([self.bos_token], dtype=torch.long, device=self.device).repeat(batch_size)
-        y_i = self.output_embedding.forward(y_i)
+        y_i_emb = self.output_embedding.forward(y_i)
 
         # hidden states and cell states at previous vertical step i-1
         s_prev_i = torch.zeros(input_seq_len, batch_size, self.state_dim_2d, device=self.device)
@@ -235,9 +235,10 @@ class LSTM2d(nn.Module):
 
         # go through each decoder output step, until either the maximum length is reached or all sentences are <eos>-ed
         i = 0
-        num_seq_left = batch_size
         active_indices = torch.tensor(list(range(batch_size)), device=self.device)
-        while i < self.max_output_len and num_seq_left > 0:
+        while i < self.max_output_len and len(active_indices) > 0:
+            num_seq_left = len(active_indices)
+
             # initialize previous horizontal hidden state and cell state
             s_prev_hor = torch.zeros(num_seq_left, self.state_dim_2d, device=self.device)
             c_prev_hor = torch.zeros(num_seq_left, self.state_dim_2d, device=self.device)
@@ -245,11 +246,12 @@ class LSTM2d(nn.Module):
             for j in range(input_seq_len):
                 # input to 2d-cell is concatenation of encoder hidden state h_j and last generated token y_i
                 h_j = h[j, active_indices, :]
-                x_j = torch.cat([h_j, y_i], dim=-1)
+                x_j = torch.cat([h_j, y_i_emb], dim=-1)     # shape (num_seq_len x input_dim)
 
                 s_prev_ver = s_prev_i[j, active_indices, :]
                 c_prev_ver = c_prev_i[j, active_indices, :]
 
+                # both of shape (num_seq_left x state_dim_2d)
                 c_hor_next, s_hor_next = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
 
                 # apply mask for active indices
@@ -265,16 +267,16 @@ class LSTM2d(nn.Module):
             # no value is equal to eos_token
             index_map = torch.ones(batch_size, dtype=torch.long, device=self.device) + self.eos_token
             argmax_tokens = torch.argmax(y_pred_i, dim=-1)          # (num_seq_left)
+            active_indices_into_current_seqs = (argmax_tokens.eq(self.eos_token) == 0).nonzero().view(-1)
             index_map[active_indices] = argmax_tokens               # set the correct num_seq_left predictions
 
             # re-calculate the indices into the batch which are still activate
             eosed_sequences = index_map.eq(self.eos_token)
-            num_seq_left -= eosed_sequences.sum().item()
             active_indices = (eosed_sequences == 0).nonzero().view(-1)
-            assert len(active_indices) == num_seq_left
+            assert len(active_indices) == num_seq_left - eosed_sequences.sum().item()
 
             # next generated token embedding
-            y_i = self.output_embedding.forward(argmax_tokens[active_indices])
+            y_i_emb = self.output_embedding.forward(argmax_tokens[active_indices_into_current_seqs])
             i += 1
 
         # truncate to longest generated sequence (i <= self.max_output_len) (will be zero-padded)
