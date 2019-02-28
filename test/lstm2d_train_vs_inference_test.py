@@ -14,11 +14,11 @@ class LSTM2dTrainVsInferenceTest(TestCase):
 
     batch_size = 42
 
-    max_input_len = 4
-    max_output_len = 5
+    max_input_len = 10
+    max_output_len = 15
 
-    input_vocab_size = 4
-    output_vocab_size = 3
+    input_vocab_size = 20
+    output_vocab_size = 30
 
     def setUp(self):
         torch.manual_seed(42)

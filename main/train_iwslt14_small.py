@@ -61,10 +61,12 @@ def main():
     train_batches = create_homogenous_batches(dataset.train, max_batch_size=options.batch_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
 
-    # restore_from_checkpoint(model, optimizer, epoch=237)
-    # model.eval()
-    # validate_model(model, dataset)
-    # exit(0)
+    """restore_from_checkpoint(model, optimizer, epoch=87)
+
+    model.eval()
+    test_model(model, dataset)
+    validate_model(model, dataset)
+    exit(0)"""
 
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
@@ -87,10 +89,10 @@ def main():
             loss_value = model.loss(y_pred, y)
             loss_history.append(loss_value.item())
 
-            # y_argmax = torch.argmax(y_pred, dim=-1)
-            # print("input: {}".format(' '.join([dataset.src.vocab.itos[i] for i in x[:, 0]])))
-            # print("target: {}".format(' '.join([dataset.tgt.vocab.itos[i] for i in y[:, 0]])))
-            # print("prediction: {}".format(' '.join([dataset.tgt.vocab.itos[i] for i in y_argmax[:, 0]])))
+            """y_argmax = torch.argmax(y_pred, dim=-1)
+            print("input: {}".format(' '.join([dataset.src.vocab.itos[i] for i in x[:, 0]])))
+            print("target: {}".format(' '.join([dataset.tgt.vocab.itos[i] for i in y[:, 0]])))
+            print("prediction: {}".format(' '.join([dataset.tgt.vocab.itos[i] for i in y_argmax[:, 0]])))"""
 
             loss_value.backward()
             optimizer.step()
@@ -106,10 +108,12 @@ def main():
 
         if np.mean(loss_history) < 0.5:
             save_checkpoint(model, optimizer, epoch)
+        if np.mean(loss_history) < 0.2:
+            exit(0)
 
 
 def test_model(model, dataset):
-    example_sentence = 'Good morning how are you ?'
+    example_sentence = 'Good morning how are you ? <eos>'
     tokens = example_sentence.split(' ')
     x = torch.tensor([[dataset.src.vocab.stoi[w] for w in tokens]], dtype=torch.long).t()
     x_lengths = torch.tensor([len(tokens)], dtype=torch.long)
@@ -136,12 +140,11 @@ def save_checkpoint(model, optimizer, epoch: int):
 
 def validate_model(model, dataset):
     batches = create_homogenous_batches(dataset.val, max_batch_size=options.batch_size)
-    batches.reverse()
     loss_history = []
 
     for i, batch in enumerate(batches):
         x, x_lengths = batch.src
-        y = batch.tgt[1:, :]    # remove <sos> token (the net should not generate this)
+        y = batch.tgt
         x_lengths[x_lengths <= 0] = 1
 
         y_pred = model.forward(x=x, x_lengths=x_lengths)
