@@ -62,12 +62,18 @@ def main():
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
 
     """restore_from_checkpoint(model, optimizer, epoch=87)"""
+    model.eval()
+    validate_model(model, dataset)
 
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
 
-        loss_history = []
+        if epoch > 0 and not epoch % 5:
+            model.eval()
+            validate_model(model, dataset)
+
         model.train()
+        loss_history = []
 
         if options.shuffle:
             shuffle(train_batches)
@@ -87,14 +93,9 @@ def main():
             loss_value.backward()
             optimizer.step()
 
-            if i > 0 and not i % 10:
+            if i > 0 and not i % 100:
                 avg_loss = np.mean(loss_history)
                 print('Average loss after {} batches (epoch #{}): {}'.format(i, epoch + 1, avg_loss))
-
-            if not i % 100:
-                model.eval()
-                validate_model(model, dataset)
-                model.train()
 
         if np.mean(loss_history) < 0.5:
             save_checkpoint(model, optimizer, epoch)
@@ -121,7 +122,7 @@ def save_checkpoint(model, optimizer, epoch: int):
     if not os.path.exists(CHECKPOINT_DIR):
         os.mkdir(CHECKPOINT_DIR)
 
-    path = os.path.join(CHECKPOINT_DIR, '{}_epoch_{}.pt'.format(model.name, epoch))
+    path = os.path.join(CHECKPOINT_DIR, '{}_epoch_{}_b{}.pt'.format(model.name, epoch, options.batch_size))
     checkpoint = {
         'model': model.state_dict(),
         'optimizer': optimizer.state_dict()
@@ -132,6 +133,7 @@ def save_checkpoint(model, optimizer, epoch: int):
 
 
 def validate_model(model, dataset):
+    print("Running validation...")
     batches = create_homogenous_batches(dataset.val, max_batch_size=options.batch_size)
     loss_history = []
 
@@ -149,7 +151,7 @@ def validate_model(model, dataset):
 
 
 def restore_from_checkpoint(model, optimizer, epoch: int):
-    path = os.path.join(CHECKPOINT_DIR, '{}_epoch_{}.pt'.format(model.name, epoch))
+    path = os.path.join(CHECKPOINT_DIR, '{}_epoch_{}_b{}.pt'.format(model.name, epoch, options.batch_size))
     if torch.cuda.is_available():
         checkpoint = torch.load(path)
     else:

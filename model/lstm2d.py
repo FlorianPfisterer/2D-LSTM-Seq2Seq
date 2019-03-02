@@ -116,6 +116,9 @@ class LSTM2d(nn.Module):
 
         Returns: () scalar-tensor representing the cross-entropy loss between y_pred and y_target
         """
+        y_pred = y_pred.to(self.device)
+        y_target = y_target.to(self.device)
+
         predicted_seq_len = y_pred.size()[0]
         target_seq_len, batch = y_target.size()
         diff = predicted_seq_len - target_seq_len
@@ -212,7 +215,8 @@ class LSTM2d(nn.Module):
 
         Args:
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
-            h_lengths: (batch) lengths of the (unpadded) input sequences, used for masking
+            ~h_lengths: (batch) lengths of the (unpadded) input sequences, used for masking~
+              (assumed to be the same across the batch for now)
 
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size) predictions (logits) for the output sequence,
@@ -233,16 +237,11 @@ class LSTM2d(nn.Module):
         # result tensor (will later be truncated to the longest generated sequence in the batch in the first dimension)
         y_pred = torch.zeros(self.max_output_len, batch_size, self.output_vocab_size, device=self.device)
 
-        # create horizontal mask tensor based on h_lengths to handle padding
-        hor_mask = torch.zeros(batch_size, input_seq_len, device=self.device)
-        for i in range(batch_size):
-            hor_mask[i, :h_lengths[i]] = 1
-
         # go through each decoder output step, until either the maximum length is reached or all sentences are <eos>-ed
         i = 0
         active_indices = torch.tensor(list(range(batch_size)), device=self.device)
         while i < self.max_output_len and len(active_indices) > 0:
-            num_seq_left = len(active_indices)
+            num_seq_left = active_indices.size()[0]
 
             # initialize previous horizontal hidden state and cell state
             s_prev_hor = torch.zeros(num_seq_left, self.state_dim_2d, device=self.device)
@@ -257,15 +256,9 @@ class LSTM2d(nn.Module):
                 c_prev_ver = c_prev_i[j, active_indices, :]
 
                 # both of shape (num_seq_left x state_dim_2d)
-                c_hor_next, s_hor_next = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
-
-                # apply mask for active indices
-                mask = hor_mask[active_indices, j].view(-1, 1)
-                c_prev_hor = (1 - mask) * c_prev_hor + mask * c_hor_next    # broadcasts over cell_state_dim dimension
-                s_prev_hor = (1 - mask) * s_prev_hor + mask * s_hor_next
-
-                s_prev_i[j, :, :] = s_prev_hor
-                c_prev_i[j, :, :] = c_prev_hor
+                c_prev_hor, s_prev_hor = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
+                s_prev_i[j, active_indices, :] = s_prev_hor
+                c_prev_i[j, active_indices, :] = c_prev_hor
 
             # obtain next predicted token
             y_pred_i = self.logits.forward(s_prev_hor)  # (num_seq_left x output_vocab_size)
@@ -275,15 +268,15 @@ class LSTM2d(nn.Module):
             # no value is equal to eos_token
             index_map = torch.ones(batch_size, dtype=torch.long, device=self.device) + self.eos_token
             argmax_tokens = torch.argmax(y_pred_i, dim=-1)          # (num_seq_left)
-            active_indices_into_current_seqs = (argmax_tokens.eq(self.eos_token) == 0).nonzero().view(-1)
             index_map[active_indices] = argmax_tokens               # set the correct num_seq_left predictions
 
-            # re-calculate the indices into the batch which are still activate
+            # re-calculate the indices into the batch which are still active
             eosed_sequences = index_map.eq(self.eos_token)
             active_indices = (eosed_sequences == 0).nonzero().view(-1)
-            assert len(active_indices) == num_seq_left - eosed_sequences.sum().item()
+            assert active_indices.size()[0] == num_seq_left - eosed_sequences.sum().item()
 
             # next generated token embedding
+            active_indices_into_current_seqs = (argmax_tokens.eq(self.eos_token) == 0).nonzero().view(-1)
             y_i_emb = self.output_embedding.forward(argmax_tokens[active_indices_into_current_seqs])
             i += 1
 
