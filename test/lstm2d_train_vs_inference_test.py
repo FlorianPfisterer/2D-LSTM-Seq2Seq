@@ -8,17 +8,17 @@ class LSTM2dTrainVsInferenceTest(TestCase):
     """
     Unit tests for comparing the 2d-LSTM's output in training and inference mode.
     """
-    embed_dim = 50
-    encoder_state_dim = 20
-    cell_state_dim = 25
+    embed_dim = 10
+    encoder_state_dim = 5
+    cell_state_dim = 3
 
-    batch_size = 42
+    batch_size = 2
 
-    max_input_len = 10
-    max_output_len = 15
+    max_input_len = 4
+    max_output_len = 6
 
-    input_vocab_size = 20
-    output_vocab_size = 30
+    input_vocab_size = 100
+    output_vocab_size = 100
 
     def setUp(self):
         torch.manual_seed(42)
@@ -26,7 +26,7 @@ class LSTM2dTrainVsInferenceTest(TestCase):
         device = torch.device('cpu')
         self.lstm = LSTM2d(embed_dim=self.embed_dim, state_dim_2d=self.cell_state_dim,
                            encoder_state_dim=self.encoder_state_dim, input_vocab_size=self.input_vocab_size,
-                           output_vocab_size=self.output_vocab_size, device=device)
+                           output_vocab_size=self.output_vocab_size, max_output_len=self.max_output_len, device=device)
 
     def test_train_matches_inference(self):
         """

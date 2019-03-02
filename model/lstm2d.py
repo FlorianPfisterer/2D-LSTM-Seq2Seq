@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Tuple
+from typing import Tuple, List
 from model.lstm2d_cell import LSTM2dCell
 
 
@@ -89,7 +89,7 @@ class LSTM2d(nn.Module):
         if self.training:
             assert y is not None, 'You must supply the correct tokens in training mode.'
             y = y.to(self.device)
-            return self.__naive_training_forward(h=h, y=y)  # self.__training_forward(h=h, y=y)
+            return self.__training_forward(h=h, y=y)
         else:
             return self.__inference_forward(h=h, h_lengths=x_lengths)
 
@@ -129,8 +129,8 @@ class LSTM2d(nn.Module):
 
     def __naive_training_forward(self, h, y):
         """
-        Non-optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
-        advance. Processes the input like in inference mode
+        Non-optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known
+        in advance. Processes the input like in inference mode.
 
         Args:
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
@@ -211,31 +211,36 @@ class LSTM2d(nn.Module):
         # obtain embedding representations for the correct tokens
         # shift by one token (add <sos> token at the beginning of the sentences)
         start_tokens = torch.tensor([self.bos_token], dtype=y.dtype, device=self.device).repeat(batch_size, 1).t()
-        y = torch.cat([start_tokens, y[:-1, :]], dim=0)
-        y_emb = self.output_embedding.forward(y)   # (output_seq_len x batch x embed_dim)
+        y_input = torch.cat([start_tokens, y[:-1, :]], dim=0)
+        y_emb = self.output_embedding.forward(y_input)   # (output_seq_len x batch x embed_dim)
 
         # store hidden and cell states, at the beginning filled with zeros
         states_s = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d, device=self.device)
         states_c = torch.zeros(input_seq_len+1, output_seq_len+1, batch_size, self.state_dim_2d, device=self.device)
 
         for diagonal_num in range(input_seq_len + output_seq_len - 1):
+            # calculate the indices for input / states / etc. for this diagonal
             (ver_from, ver_to), (hor_from, hor_to) = LSTM2d.__calculate_input_ranges(diagonal_num=diagonal_num,
                                                                                      input_seq_len=input_seq_len,
                                                                                      output_seq_len=output_seq_len)
-
             ver_state_ranges, hor_state_ranges, diag_ranges = LSTM2d.__calculate_state_ranges((ver_from, ver_to),
                                                                                               (hor_from, hor_to))
             ver_range_x, ver_range_y = ver_state_ranges
             hor_range_x, hor_range_y = hor_state_ranges
             diag_range_x, diag_range_y = diag_ranges
 
-            diagonal_len = ver_to - ver_from  # (always equals hor_to - hor_from)
+            # flip the output range so we take the inputs in the right order corresponding to the input range
+            # Note: the 2d-cell with smallest source-position (horizontally) and largest target-position (vertically) is
+            # the first cell in the diagonal!
+            input_range = list(range(ver_from, ver_to))
+            output_range = list(reversed(range(hor_from, hor_to)))
+            diagonal_len = len(input_range)  # always == len(output_range)
 
             # calculate x input for this diagonal
             # treat diagonal as though it was a larger batch and reshape inputs accordingly
             new_batch_size = diagonal_len * batch_size
-            h_current = h[ver_from:ver_to, :, :].view(new_batch_size, 2*self.encoder_state_dim)
-            y_current = y_emb[hor_from:hor_to, :, :].view(new_batch_size, self.embed_dim)
+            h_current = h[input_range, :, :].view(new_batch_size, 2*self.encoder_state_dim)
+            y_current = y_emb[output_range, :, :].view(new_batch_size, self.embed_dim)
             x_current = torch.cat([h_current, y_current], dim=-1)   # shape (batch*diagonal_len x input_dim)
 
             # calculate previous hidden & cell states for this diagonal
@@ -421,11 +426,17 @@ class LSTM2d(nn.Module):
             - hor_ranges: the x and y coordinates for the horizontal previous states
             - diag_ranges: the x and y coordinates for the current diagonal (to store the new states correctly)
         """
-        # helper function for "negative" ranges
-        def autorange(minmax: Tuple[int, int]):
+        # helper function
+        def autorange(minmax: Tuple[int, int]) -> List[int]:
+            """
+            Returns a list of integer indices that represent the given range. If min > max, the reversed range from max+1 to
+                min+1 is returned
+            :param minmax: the range tuple (min, max) for indices to consider
+            :return: an integer list of indices
+            """
             min, max = minmax
             if min > max:
-                return list(reversed(range(max+1, min+1)))
+                return list(reversed(range(max + 1, min + 1)))
             return list(range(min, max))
 
         ver_from, ver_to = input_range
