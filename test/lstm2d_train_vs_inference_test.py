@@ -9,13 +9,13 @@ class LSTM2dTrainVsInferenceTest(TestCase):
     Unit tests for comparing the 2d-LSTM's output in training and inference mode.
     """
     embed_dim = 10
-    encoder_state_dim = 5
-    cell_state_dim = 3
+    encoder_state_dim = 16
+    cell_state_dim = 32
 
-    batch_size = 2
+    batch_size = 20
 
-    max_input_len = 4
-    max_output_len = 6
+    max_input_len = 40
+    max_output_len = 50
 
     input_vocab_size = 100
     output_vocab_size = 100
@@ -45,5 +45,5 @@ class LSTM2dTrainVsInferenceTest(TestCase):
         self.lstm.train()
         y_pred_train = self.lstm.forward(x=x, x_lengths=x_lengths, y=y)  # (output_seq_len x batch x output_vocab_size)
 
-        self.assertTrue(torch.allclose(y_pred_inference, y_pred_train),
+        self.assertTrue(torch.allclose(y_pred_inference, y_pred_train, atol=1e-04),
                         'Predictions vary across training vs. inference mode.')

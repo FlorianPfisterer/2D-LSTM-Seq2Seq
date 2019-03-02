@@ -127,65 +127,6 @@ class LSTM2d(nn.Module):
             y_pred = torch.cat([y_pred, padding], dim=0)
         return self.loss(y_pred, y_target)
 
-    def __naive_training_forward(self, h, y):
-        """
-        Non-optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known
-        in advance. Processes the input like in inference mode.
-
-        Args:
-            h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
-                important: in training mode, the length of all source sequences in a batch must be of the same length
-                    (i.e. no padding for the horizontal dimension, all sequences have length exactly input_seq_len)
-            y: (output_seq_len x batch) correct output tokens (indices in range [0, output_vocab_size))
-
-        Returns:
-            y_pred: (output_seq_len x batch x output_vocab_size)
-                predicted output sequence (logits for output_vocab_size)
-        """
-        batch_size = h.size()[1]
-        input_seq_len = h.size()[0]
-        output_seq_len = y.size()[0]
-
-        # initialize y to (embedded) start tokens
-        y_i = torch.tensor([self.bos_token], dtype=torch.long, device=self.device).repeat(batch_size)
-        y_i_emb = self.output_embedding.forward(y_i)
-
-        # hidden states and cell states at previous vertical step i-1
-        s_prev_i = torch.zeros(input_seq_len, batch_size, self.state_dim_2d, device=self.device)
-        c_prev_i = torch.zeros(input_seq_len, batch_size, self.state_dim_2d, device=self.device)
-
-        # result tensor
-        y_pred = torch.zeros(output_seq_len, batch_size, self.output_vocab_size, device=self.device)
-
-        # go through each decoder output step
-        for i in range(output_seq_len):
-            # initialize previous horizontal hidden state and cell state
-            s_prev_hor = torch.zeros(batch_size, self.state_dim_2d, device=self.device)
-            c_prev_hor = torch.zeros(batch_size, self.state_dim_2d, device=self.device)
-
-            for j in range(input_seq_len):
-                # input to 2d-cell is concatenation of encoder hidden state h_j and next token y_i_emb
-                h_j = h[j, :, :]
-                x_j = torch.cat([h_j, y_i_emb], dim=-1)  # shape (batch_size x input_dim)
-
-                s_prev_ver = s_prev_i[j, :, :]
-                c_prev_ver = c_prev_i[j, :, :]
-
-                # both of shape (batch_size x state_dim_2d)
-                c_hor_next, s_hor_next = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
-
-                c_prev_hor = c_hor_next
-                s_prev_hor = s_hor_next
-
-            # obtain predictions
-            y_pred_i = self.logits.forward(s_prev_hor)  # (batch_size x output_vocab_size)
-            y_pred[i, :, :] = y_pred_i
-
-            # next token embedding
-            y_i_emb = self.output_embedding.forward(y[i, :])
-
-        return y_pred
-
     def __training_forward(self, h, y):
         """
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
@@ -322,6 +263,9 @@ class LSTM2d(nn.Module):
                 mask = hor_mask[active_indices, j].view(-1, 1)
                 c_prev_hor = (1 - mask) * c_prev_hor + mask * c_hor_next    # broadcasts over cell_state_dim dimension
                 s_prev_hor = (1 - mask) * s_prev_hor + mask * s_hor_next
+
+                s_prev_i[j, :, :] = s_prev_hor
+                c_prev_i[j, :, :] = c_prev_hor
 
             # obtain next predicted token
             y_pred_i = self.logits.forward(s_prev_hor)  # (num_seq_left x output_vocab_size)
