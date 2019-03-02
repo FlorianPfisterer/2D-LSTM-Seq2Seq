@@ -61,12 +61,7 @@ def main():
     train_batches = create_homogenous_batches(dataset.train, max_batch_size=options.batch_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
 
-    """restore_from_checkpoint(model, optimizer, epoch=87)
-
-    model.eval()
-    test_model(model, dataset)
-    validate_model(model, dataset)
-    exit(0)"""
+    """restore_from_checkpoint(model, optimizer, epoch=87)"""
 
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
@@ -89,11 +84,6 @@ def main():
             loss_value = model.loss(y_pred, y)
             loss_history.append(loss_value.item())
 
-            """y_argmax = torch.argmax(y_pred, dim=-1)
-            print("input: {}".format(' '.join([dataset.src.vocab.itos[i] for i in x[:, 0]])))
-            print("target: {}".format(' '.join([dataset.tgt.vocab.itos[i] for i in y[:, 0]])))
-            print("prediction: {}".format(' '.join([dataset.tgt.vocab.itos[i] for i in y_argmax[:, 0]])))"""
-
             loss_value.backward()
             optimizer.step()
 
@@ -103,11 +93,14 @@ def main():
 
             if not i % 100:
                 model.eval()
-                test_model(model, dataset)
+                validate_model(model, dataset)
                 model.train()
 
         if np.mean(loss_history) < 0.5:
             save_checkpoint(model, optimizer, epoch)
+        elif epoch > 150:
+            save_checkpoint(model, optimizer, epoch)
+            exit(0)
         if np.mean(loss_history) < 0.2:
             exit(0)
 
@@ -150,11 +143,6 @@ def validate_model(model, dataset):
         y_pred = model.forward(x=x, x_lengths=x_lengths)
         loss_value = model.padded_loss(y_pred, y)
         loss_history.append(loss_value.item())
-
-        y_argmax = torch.argmax(y_pred, dim=-1)
-        print("input: {}".format(' '.join([dataset.src.vocab.itos[i] for i in x[:, 0]])))
-        print("target: {}".format(' '.join([dataset.tgt.vocab.itos[i] for i in y[:, 0]])))
-        print("prediction: {}".format(' '.join([dataset.tgt.vocab.itos[i] for i in y_argmax[:, 0]])))
 
     avg_loss = np.mean(loss_history)
     print("Average loss on validation dataset: {}".format(avg_loss))
