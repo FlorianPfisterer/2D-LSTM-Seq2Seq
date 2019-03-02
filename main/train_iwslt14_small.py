@@ -61,14 +61,11 @@ def main():
     train_batches = create_homogenous_batches(dataset.train, max_batch_size=options.batch_size)
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
 
-    """restore_from_checkpoint(model, optimizer, epoch=87)"""
-    model.eval()
-    validate_model(model, dataset)
-
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
 
-        if epoch > 0 and not epoch % 5:
+        if epoch > 0 and not epoch % 3:
+            save_checkpoint(model, optimizer, epoch)
             model.eval()
             validate_model(model, dataset)
 

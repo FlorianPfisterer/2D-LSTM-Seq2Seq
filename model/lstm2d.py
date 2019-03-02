@@ -272,7 +272,10 @@ class LSTM2d(nn.Module):
 
             # re-calculate the indices into the batch which are still active
             eosed_sequences = index_map.eq(self.eos_token)
-            active_indices = (eosed_sequences == 0).nonzero().view(-1)
+            was_active_mask = torch.zeros(batch_size, dtype=torch.uint8, device=self.device)
+            was_active_mask[active_indices] = 1
+
+            active_indices = ((eosed_sequences == 0) * was_active_mask).nonzero().view(-1)
             assert active_indices.size()[0] == num_seq_left - eosed_sequences.sum().item()
 
             # next generated token embedding
