@@ -78,7 +78,7 @@ def main():
         for i, batch in enumerate(train_batches):
             optimizer.zero_grad()
             x, x_lengths = batch.src
-            x_lengths[x_lengths <= 0] = 1  # TODO -- crashes for values <= 0
+            x_lengths[x_lengths <= 0] = 1  # crashes for values <= 0 (seems to be a bug)
             y = batch.tgt
 
             y_pred = model.forward(x=x, x_lengths=x_lengths, y=y)
@@ -104,7 +104,7 @@ def main():
 
 
 def test_model(model, dataset):
-    example_sentence = 'Good morning how are you ? <eos>'
+    example_sentence = 'Good morning , how are you ? <eos>'
     tokens = example_sentence.split(' ')
     x = torch.tensor([[dataset.src.vocab.stoi[w] for w in tokens]], dtype=torch.long).t()
     x_lengths = torch.tensor([len(tokens)], dtype=torch.long)

@@ -9,7 +9,8 @@ Contains utility functions for working with any NMT dataset, based on torchtext.
 
 def create_homogenous_batches(dataset: Dataset, max_batch_size: int,
                               key_fn=lambda ex: -len(ex.src),
-                              filter_fn=lambda ex: len(ex.src) > 0) -> List[Batch]:
+                              filter_fn=lambda ex: len(ex.src) > 0,
+                              sort: bool = True) -> List[Batch]:
     """
     Creates a list of batches such that for each batch b it holds that:
         - b contains at least one and at most max_batch_size examples
@@ -24,10 +25,11 @@ def create_homogenous_batches(dataset: Dataset, max_batch_size: int,
             that all have exactly the same key (e.g. source sentence length).
         filter_fn: function of type (Example) -> bool, that is used to filter the examples. No example e with
             filter_fn(e) == False will be contained in any batch.
+        sort: whether or not to sort the examples (by the given key_fn)
 
     Returns: a list of batches with the above properties
     """
-    sorted_examples = sorted(dataset.examples, key=key_fn)
+    sorted_examples = sorted(dataset.examples, key=key_fn) if sort else dataset.examples
 
     same_key_blocks = []
     previous_key = -1
