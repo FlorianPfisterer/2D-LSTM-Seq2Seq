@@ -1,7 +1,6 @@
 from data.iwslt14_small.dataset_utils import create_dataset, BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
 from model.lstm2d import LSTM2d
-from random import shuffle
-from data.data_utils import create_homogenous_batches
+from data.data_utils import get_bucket_iterator
 import argparse
 import torch
 import numpy as np
@@ -58,7 +57,7 @@ def main():
         device=options.device
     )
 
-    train_batches = create_homogenous_batches(dataset.train, max_batch_size=options.batch_size)
+    train_iterator = get_bucket_iterator(dataset.train, batch_size=options.batch_size, shuffle=options.shuffle)
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
 
     for epoch in range(options.epochs):
@@ -72,10 +71,7 @@ def main():
         model.train()
         loss_history = []
 
-        if options.shuffle:
-            shuffle(train_batches)
-
-        for i, batch in enumerate(train_batches):
+        for i, batch in enumerate(train_iterator):
             optimizer.zero_grad()
             x, x_lengths = batch.src
             x_lengths[x_lengths <= 0] = 1  # crashes for values <= 0 (seems to be a bug)
