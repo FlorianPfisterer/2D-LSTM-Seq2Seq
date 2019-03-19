@@ -67,9 +67,7 @@ class LSTM2d(nn.Module):
         and inference.
         Args:
             x: (input_seq_len x batch) input tokens (indices in range [0, input_vocab_size))
-            x_lengths: (batch) lengths of the (unpadded) input sequences, used for masking
-                important: in training mode, the length of all source sequences in a batch must be of the same length
-                    (i.e. no padding for the horizontal dimension)
+            x_lengths: (batch) lengths of the input sequences, used for masking
             y (only if training): (output_seq_len x batch) correct output tokens
                                   (indices in range [0, output_vocab_size))
 
@@ -89,7 +87,7 @@ class LSTM2d(nn.Module):
         if self.training:
             assert y is not None, 'You must supply the correct tokens in training mode.'
             y = y.to(self.device)
-            return self.__training_forward(h=h, y=y)
+            return self.__training_forward(h=h, h_lengths=x_lengths, y=y)
         else:
             return self.__inference_forward(h=h, h_lengths=x_lengths)
 
@@ -130,7 +128,7 @@ class LSTM2d(nn.Module):
             y_pred = torch.cat([y_pred, padding], dim=0)
         return self.loss(y_pred, y_target)
 
-    def __training_forward(self, h, y):
+    def __training_forward(self, h, h_lengths, y):
         """
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
         advance.
@@ -142,6 +140,7 @@ class LSTM2d(nn.Module):
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
                 important: in training mode, the length of all source sequences in a batch must be of the same length
                     (i.e. no padding for the horizontal dimension, all sequences have length exactly input_seq_len)
+            h_lengths: (batch) lengths of the input sequences in the batch (the rest is padding)
             y: (output_seq_len x batch) correct output tokens (indices in range [0, output_vocab_size))
 
         Returns:
@@ -204,9 +203,10 @@ class LSTM2d(nn.Module):
             states_s[diag_range_x, diag_range_y, :, :] = s_next
             states_c[diag_range_x, diag_range_y, :, :] = c_next
 
-        # for the prediction, takes the last (-1) column of states and all but the first (1:) row
-        states_for_pred = states_s[-1, 1:, :, :]        # this usually depends on the input padding per batch-example
+        # for the prediction, take the last (valid, non-padded) column of states and all but the first (1:) row
+        states_for_pred = states_s[h_lengths, 1:, range(batch_size), :].permute(1, 0, 2)
         y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
+
         return y_pred
 
     def __inference_forward(self, h, h_lengths):
