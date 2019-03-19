@@ -25,7 +25,7 @@ class LSTM2dTrainingTest(TestCase):
         device = torch.device('cpu')
         self.lstm = LSTM2d(embed_dim=self.embed_dim, state_dim_2d=self.cell_state_dim,
                            encoder_state_dim=self.encoder_state_dim, input_vocab_size=self.input_vocab_size,
-                           output_vocab_size=self.output_vocab_size, device=device)
+                           output_vocab_size=self.output_vocab_size, device=device, dropout_p=0)
 
     def test_dimensions(self):
         """
