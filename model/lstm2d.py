@@ -32,7 +32,7 @@ class LSTM2d(nn.Module):
     name = "lstm2d-plain"
 
     def __init__(self, embed_dim, state_dim_2d, encoder_state_dim, input_vocab_size, output_vocab_size, device,
-                 max_output_len=100, bos_token=1, eos_token=2, pad_token=0):
+                 dropout_p=0.2, max_output_len=100, bos_token=1, eos_token=2, pad_token=0):
         super(LSTM2d, self).__init__()
 
         self.embed_dim = embed_dim
@@ -50,11 +50,14 @@ class LSTM2d(nn.Module):
         self.input_embedding = nn.Embedding(num_embeddings=input_vocab_size, embedding_dim=embed_dim).to(self.device)
         self.output_embedding = nn.Embedding(num_embeddings=output_vocab_size, embedding_dim=embed_dim).to(self.device)
 
+        self.embedding_dropout = nn.Dropout(p=dropout_p)
+
         # input to the 2d-cell is a concatenation of the hidden encoder states h_j and the embedded output tokens y_i-1
         cell_input_dim = 2*encoder_state_dim + embed_dim    # 2*encoder_state_dim since it's bidirectional
         self.cell2d = LSTM2dCell(cell_input_dim, state_dim_2d, device=self.device)
 
         # final output layer for next predicted token
+        self.logits_dropout = nn.Dropout(p=dropout_p)
         self.logits = nn.Linear(in_features=state_dim_2d, out_features=output_vocab_size).to(self.device)
         self.loss_function = torch.nn.CrossEntropyLoss(ignore_index=pad_token).to(self.device)
 
@@ -205,8 +208,9 @@ class LSTM2d(nn.Module):
 
         # for the prediction, take the last (valid, non-padded) column of states and all but the first (1:) row
         states_for_pred = states_s[h_lengths, 1:, range(batch_size), :].permute(1, 0, 2)
-        y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
+        states_for_pred = self.logits_dropout.forward(states_for_pred)
 
+        y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
         return y_pred
 
     def __inference_forward(self, h, h_lengths):
@@ -308,6 +312,7 @@ class LSTM2d(nn.Module):
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
         """
         embedded_x = self.input_embedding.forward(x)        # (input_seq_len x batch x embed_dim)
+        embedded_x = self.embedding_dropout.forward(embedded_x)
 
         # pack and unpack the padded batch for the encoder
         packed_x = nn.utils.rnn.pack_padded_sequence(embedded_x, x_lengths)
