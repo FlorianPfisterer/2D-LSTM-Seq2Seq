@@ -1,5 +1,4 @@
 from unittest import TestCase
-from unittest import skip
 import torch
 from model.lstm2d import LSTM2d
 

@@ -67,9 +67,7 @@ class LSTM2d(nn.Module):
         and inference.
         Args:
             x: (input_seq_len x batch) input tokens (indices in range [0, input_vocab_size))
-            x_lengths: (batch) lengths of the (unpadded) input sequences, used for masking
-                important: in training mode, the length of all source sequences in a batch must be of the same length
-                    (i.e. no padding for the horizontal dimension)
+            x_lengths: (batch) lengths of the input sequences, used for masking
             y (only if training): (output_seq_len x batch) correct output tokens
                                   (indices in range [0, output_vocab_size))
 
@@ -89,7 +87,7 @@ class LSTM2d(nn.Module):
         if self.training:
             assert y is not None, 'You must supply the correct tokens in training mode.'
             y = y.to(self.device)
-            return self.__training_forward(h=h, y=y)
+            return self.__training_forward(h=h, h_lengths=x_lengths, y=y)
         else:
             return self.__inference_forward(h=h, h_lengths=x_lengths)
 
@@ -130,7 +128,7 @@ class LSTM2d(nn.Module):
             y_pred = torch.cat([y_pred, padding], dim=0)
         return self.loss(y_pred, y_target)
 
-    def __training_forward(self, h, y):
+    def __training_forward(self, h, h_lengths, y):
         """
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
         advance.
@@ -142,6 +140,7 @@ class LSTM2d(nn.Module):
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
                 important: in training mode, the length of all source sequences in a batch must be of the same length
                     (i.e. no padding for the horizontal dimension, all sequences have length exactly input_seq_len)
+            h_lengths: (batch) lengths of the input sequences in the batch (the rest is padding)
             y: (output_seq_len x batch) correct output tokens (indices in range [0, output_vocab_size))
 
         Returns:
@@ -204,9 +203,10 @@ class LSTM2d(nn.Module):
             states_s[diag_range_x, diag_range_y, :, :] = s_next
             states_c[diag_range_x, diag_range_y, :, :] = c_next
 
-        # for the prediction, takes the last (-1) column of states and all but the first (1:) row
-        states_for_pred = states_s[-1, 1:, :, :]        # this usually depends on the input padding per batch-example
+        # for the prediction, take the last (valid, non-padded) column of states and all but the first (1:) row
+        states_for_pred = states_s[h_lengths, 1:, range(batch_size), :].permute(1, 0, 2)
         y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
+
         return y_pred
 
     def __inference_forward(self, h, h_lengths):
@@ -215,8 +215,7 @@ class LSTM2d(nn.Module):
 
         Args:
             h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
-            ~h_lengths: (batch) lengths of the (unpadded) input sequences, used for masking~
-              (assumed to be the same across the batch for now)
+            h_lengths: (batch) lengths of the input sequences, used for masking
 
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size) predictions (logits) for the output sequence,
@@ -237,6 +236,11 @@ class LSTM2d(nn.Module):
         # result tensor (will later be truncated to the longest generated sequence in the batch in the first dimension)
         y_pred = torch.zeros(self.max_output_len, batch_size, self.output_vocab_size, device=self.device)
 
+        # create horizontal mask tensor based on h_lengths to handle padding
+        hor_mask = torch.zeros(batch_size, input_seq_len, device=self.device)
+        for i in range(batch_size):
+            hor_mask[i, :h_lengths[i]] = 1
+
         # go through each decoder output step, until either the maximum length is reached or all sentences are <eos>-ed
         i = 0
         active_indices = torch.tensor(list(range(batch_size)), device=self.device)
@@ -256,7 +260,13 @@ class LSTM2d(nn.Module):
                 c_prev_ver = c_prev_i[j, active_indices, :]
 
                 # both of shape (num_seq_left x state_dim_2d)
-                c_prev_hor, s_prev_hor = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
+                c_next_hor, s_next_hor = self.cell2d.forward(x_j, s_prev_hor, s_prev_ver, c_prev_hor, c_prev_ver)
+
+                # apply the mask (accounting for different input sequence lengths)
+                mask = hor_mask[active_indices, j].view(-1, 1)  # broadcasts over cell_state_dim dimension
+                s_prev_hor = (1 - mask) * s_prev_hor + mask * s_next_hor
+                c_prev_hor = (1 - mask) * c_prev_hor + mask * c_next_hor
+
                 s_prev_i[j, active_indices, :] = s_prev_hor
                 c_prev_i[j, active_indices, :] = c_prev_hor
 
