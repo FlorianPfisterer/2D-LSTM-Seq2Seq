@@ -13,7 +13,7 @@ CHECKPOINT_DIR = ROOT_DIR + '/checkpoints'
 parser = argparse.ArgumentParser(description='train_iwslt14_small.py')
 parser.add_argument('--batch_size', type=int, default=32,
                     help='The batch size to use for training and inference.')
-parser.add_argument('--epochs', type=int, default=5,
+parser.add_argument('--epochs', type=int, default=200,
                     help='The number of epochs to train.')
 parser.add_argument('--shuffle', type=bool, default=True,
                     help='Whether or not to shuffle the training examples.')
@@ -63,9 +63,11 @@ def main():
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
 
-        if epoch > 0 and not epoch % 3:
-            save_checkpoint(model, optimizer, epoch)
+        if not epoch % 5:
+            if epoch > 0 and not epoch % 10:
+                save_checkpoint(model, optimizer, epoch)
             model.eval()
+            test_model(model, dataset)
             validate_model(model, dataset)
 
         model.train()
@@ -79,7 +81,6 @@ def main():
 
             y_pred = model.forward(x=x, x_lengths=x_lengths, y=y)
 
-            # for the loss, we need to
             loss_value = model.loss(y_pred, y)
             loss_history.append(loss_value.item())
 
@@ -88,7 +89,7 @@ def main():
 
             if i > 0 and not i % 100:
                 avg_loss = np.mean(loss_history)
-                print('Average loss after {} batches (epoch #{}): {}'.format(i, epoch + 1, avg_loss))
+                print('Average loss after {} batches (in epoch #{}): {}'.format(i, epoch + 1, avg_loss))
 
         if np.mean(loss_history) < 0.5:
             save_checkpoint(model, optimizer, epoch)
@@ -127,10 +128,10 @@ def save_checkpoint(model, optimizer, epoch: int):
 
 def validate_model(model, dataset):
     print("Running validation...")
-    batches = create_homogenous_batches(dataset.val, max_batch_size=options.batch_size)
+    val_iterator = get_bucket_iterator(dataset.val, batch_size=options.batch_size, shuffle=False)
     loss_history = []
 
-    for i, batch in enumerate(batches):
+    for i, batch in enumerate(val_iterator):
         x, x_lengths = batch.src
         y = batch.tgt
         x_lengths[x_lengths <= 0] = 1

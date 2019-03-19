@@ -10,7 +10,7 @@ Contains utility functions for working with any NMT dataset, based on torchtext.
 
 def get_bucket_iterator(dataset: Dataset, batch_size: int, shuffle: bool) -> BucketIterator:
     sort_key = lambda x: len(x.src)
-    return BucketIterator(dataset=dataset, batch_size=batch_size, shuffle=shuffle, sort=shuffle, sort_key=sort_key)
+    return BucketIterator(dataset=dataset, batch_size=batch_size, shuffle=shuffle, sort=True, sort_key=sort_key)
 
 
 def create_homogenous_batches(dataset: Dataset, max_batch_size: int,

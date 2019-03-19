@@ -237,7 +237,7 @@ class LSTM2d(nn.Module):
         y_pred = torch.zeros(self.max_output_len, batch_size, self.output_vocab_size, device=self.device)
 
         # create horizontal mask tensor based on h_lengths to handle padding
-        hor_mask = torch.zeros(batch_size, input_seq_len)
+        hor_mask = torch.zeros(batch_size, input_seq_len, device=self.device)
         for i in range(batch_size):
             hor_mask[i, :h_lengths[i]] = 1
 
