@@ -1,10 +1,12 @@
 from data.iwslt14_small.dataset_utils import create_dataset, BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
 from model.lstm2d import LSTM2d
 from data.data_utils import get_bucket_iterator
+from torchtext.data import Iterator
 import argparse
 import torch
 import numpy as np
 import os
+import itertools
 
 ROOT_DIR = os.path.dirname(os.path.abspath(os.path.join(__file__, os.pardir)))
 CHECKPOINT_DIR = ROOT_DIR + '/checkpoints'
@@ -27,6 +29,8 @@ parser.add_argument('--state_2d_dim', type=int, default=128,
                     help='The dimension of the 2D-LSTM hidden & cell states.')
 parser.add_argument('--disable_cuda', default=False, action='store_true',
                     help='Disable CUDA (i.e. use the CPU for all computations)')
+parser.add_argument('--dropout_p', type=float, default=0.2,
+                    help='The dropout probability.')
 options = parser.parse_args()
 options.device = None
 if not options.disable_cuda and torch.cuda.is_available():
@@ -54,7 +58,8 @@ def main():
         bos_token=bos_token,
         eos_token=eos_token,
         pad_token=pad_token,
-        device=options.device
+        device=options.device,
+        dropout_p=options.dropout_p
     )
 
     train_iterator = get_bucket_iterator(dataset.train, batch_size=options.batch_size, shuffle=options.shuffle)
@@ -73,6 +78,7 @@ def main():
         model.train()
         loss_history = []
 
+        train_iterator.init_epoch()
         for i, batch in enumerate(train_iterator):
             optimizer.zero_grad()
             x, x_lengths = batch.src
@@ -112,20 +118,6 @@ def test_model(model, dataset):
     print('translate(\"{}\") ==> \"{}\"'.format(example_sentence, output_sentence))
 
 
-def save_checkpoint(model, optimizer, epoch: int):
-    if not os.path.exists(CHECKPOINT_DIR):
-        os.mkdir(CHECKPOINT_DIR)
-
-    path = os.path.join(CHECKPOINT_DIR, '{}_epoch_{}_b{}.pt'.format(model.name, epoch, options.batch_size))
-    checkpoint = {
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict()
-    }
-    torch.save(checkpoint, path)
-
-    print('Saved checkpoint for \'{}\' at epoch #{}'.format(model.name, epoch))
-
-
 def validate_model(model, dataset):
     print("Running validation...")
     val_iterator = get_bucket_iterator(dataset.val, batch_size=options.batch_size, shuffle=False)
@@ -144,8 +136,45 @@ def validate_model(model, dataset):
     print("Average loss on validation dataset: {}".format(avg_loss))
 
 
+def export_predictions(model, dataset, file_name):
+    print("Exporting validation set predictions to {}".format(file_name))
+    pad_token = dataset.tgt.vocab.stoi[PAD_TOKEN]
+
+    # must be batch_size=1 to preserve the order while also ensuring the lengths are sorted (required by PyTorch)
+    iterator = Iterator(dataset.val, batch_size=1, train=False, sort=False)
+    iterator.init_epoch()
+    model.eval()
+
+    with open(file_name, 'a') as predictions_file:
+        for batch in iterator:
+            x, x_lengths = batch.src
+            x_lengths[x_lengths <= 0] = 1  # crashes for values <= 0 (seems to be a bug)
+
+            y_pred = model.forward(x, x_lengths)    # output_seq_len x (batch=1) x output_vocab_size
+            y_argmax = torch.argmax(y_pred, dim=-1).view(-1)
+
+            unpadded_idxs = itertools.takewhile(lambda idx: idx != pad_token, y_argmax)
+            prediction_sentence = ' '.join(map(lambda idx: dataset.tgt.vocab.itos[idx], unpadded_idxs))
+
+            predictions_file.write(prediction_sentence + '\n')
+
+
+def save_checkpoint(model, optimizer, epoch: int):
+    if not os.path.exists(CHECKPOINT_DIR):
+        os.mkdir(CHECKPOINT_DIR)
+
+    path = __get_checkpoint_path(model, epoch)
+    checkpoint = {
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict()
+    }
+    torch.save(checkpoint, path)
+
+    print('Saved checkpoint for \'{}\' at epoch #{}'.format(model.name, epoch))
+
+
 def restore_from_checkpoint(model, optimizer, epoch: int):
-    path = os.path.join(CHECKPOINT_DIR, '{}_epoch_{}_b{}.pt'.format(model.name, epoch, options.batch_size))
+    path = __get_checkpoint_path(model, epoch)
     if torch.cuda.is_available():
         checkpoint = torch.load(path)
     else:
@@ -154,6 +183,11 @@ def restore_from_checkpoint(model, optimizer, epoch: int):
     optimizer.load_state_dict(checkpoint['optimizer'])
 
     print('Restored checkpoint for \'{}\' at epoch #{}'.format(model.name, epoch))
+
+
+def __get_checkpoint_path(model, epoch):
+    return os.path.join(CHECKPOINT_DIR, '{}_epoch_{}_b{}_p{}.pt'.format(model.name, epoch, options.batch_size,
+                                                                        options.dropout_p))
 
 
 if __name__ == '__main__':
