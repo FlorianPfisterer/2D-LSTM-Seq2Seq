@@ -19,13 +19,18 @@ def calculate_bleu_score(candidate_file: str, reference_file: str) -> float:
     """
 
     """"""
-    reference = open(candidate_file, 'r').readlines()
-    candidate = open(reference_file.candidate, 'r').readlines()
+    candidate = open(candidate_file, 'r').readlines()
+    reference = open(reference_file, 'r').readlines()
+
+    num_candidates = len(candidate)
+    reference = reference[:num_candidates]
     assert len(reference) == len(candidate), 'The # of lines in the two files do not match'
 
     score = 0.
     for i in range(len(reference)):
-        score += sentence_bleu([reference[i].strip().split()], candidate[i].strip().split())
-    score /= len(reference)
+        ref = reference[i].strip().split()
+        cand = candidate[i].strip().split()
+        score += sentence_bleu([ref], cand)
 
+    score /= num_candidates
     return score
