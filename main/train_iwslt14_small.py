@@ -7,6 +7,8 @@ import torch
 import numpy as np
 import os
 import itertools
+from tensorboardX import SummaryWriter
+from datetime import datetime
 
 ROOT_DIR = os.path.dirname(os.path.abspath(os.path.join(__file__, os.pardir)))
 CHECKPOINT_DIR = ROOT_DIR + '/checkpoints'
@@ -39,6 +41,9 @@ else:
     options.device = torch.device('cpu')
 print('Using device: {}'.format(options.device))
 
+experiment_name = 'b{}_p{}_{}'.format(options.batch_size, options.dropout_p, datetime.now())
+writer = SummaryWriter(log_dir='runs/{}'.format(experiment_name))
+
 
 def main():
     dataset = create_dataset()
@@ -65,15 +70,19 @@ def main():
     train_iterator = get_bucket_iterator(dataset.train, batch_size=options.batch_size, shuffle=options.shuffle)
     optimizer = torch.optim.Adam(model.parameters(), lr=options.lr)
 
+    batches_per_epoch = len(dataset.train.examples) // options.batch_size
+    val_loss_history = []
+
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
 
-        if not epoch % 5:
-            if epoch > 0 and not epoch % 10:
-                save_checkpoint(model, optimizer, epoch)
+        writer.add_histogram('input_embeddings', model.input_embedding.weight.data, epoch * batches_per_epoch)
+        writer.add_histogram('output_embeddings', model.output_embedding.weight.data, epoch * batches_per_epoch)
+
+        if epoch > 0 and not epoch % 5:
+            save_checkpoint(model, optimizer, epoch)
             model.eval()
             test_model(model, dataset)
-            validate_model(model, dataset)
 
         model.train()
         loss_history = []
@@ -89,6 +98,7 @@ def main():
 
             loss_value = model.loss(y_pred, y)
             loss_history.append(loss_value.item())
+            writer.add_scalar('train_loss', loss_value, global_step=epoch*batches_per_epoch + i)
 
             loss_value.backward()
             optimizer.step()
@@ -97,13 +107,28 @@ def main():
                 avg_loss = np.mean(loss_history)
                 print('Average loss after {} batches (in epoch #{}): {}'.format(i, epoch + 1, avg_loss))
 
-        if np.mean(loss_history) < 0.5:
+        # calculate loss metrics
+        train_loss = np.mean(loss_history)
+        model.eval()
+        val_loss = validate_model(model, dataset)
+        val_loss_history.append(val_loss)
+
+        global_step = (epoch+1)*batches_per_epoch
+        writer.add_scalar('train_loss', train_loss, global_step)
+        writer.add_scalar('val_loss', val_loss, global_step)
+
+        # early stopping
+        if epoch >= 5 and val_loss > val_loss_history[-2] > val_loss_history[-3] > val_loss_history[-4]:
+            print('Early-stopping criterion is met!')
             save_checkpoint(model, optimizer, epoch)
-        elif epoch > 150:
-            save_checkpoint(model, optimizer, epoch)
-            exit(0)
-        if np.mean(loss_history) < 0.2:
-            exit(0)
+            break
+
+    finalize()
+
+
+def finalize():
+    writer.export_scalars_to_json("./all_scalars.json")
+    writer.close()
 
 
 def test_model(model, dataset):
@@ -134,6 +159,7 @@ def validate_model(model, dataset):
 
     avg_loss = np.mean(loss_history)
     print("Average loss on validation dataset: {}".format(avg_loss))
+    return avg_loss
 
 
 def export_predictions(model, dataset, file_name):
