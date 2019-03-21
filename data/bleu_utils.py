@@ -17,20 +17,19 @@ def calculate_bleu_score(candidate_file: str, reference_file: str) -> float:
     Returns:
         the average BLEU score
     """
-
-    """"""
     candidate = open(candidate_file, 'r').readlines()
     reference = open(reference_file, 'r').readlines()
 
     num_candidates = len(candidate)
     reference = reference[:num_candidates]
-    assert len(reference) == len(candidate), 'The # of lines in the two files do not match'
+    assert len(reference) == len(candidate), 'Make sure there are at least as many references as candidates.'
 
     score = 0.
     for i in range(len(reference)):
-        ref = reference[i].strip().split()
-        cand = candidate[i].strip().split()
-        score += sentence_bleu([ref], cand)
+        ref = reference[i].strip()
+        cand = candidate[i].strip()
+        score_i = sentence_bleu([ref.split()], cand.split(), weights=(0.5, 0.5))
+        score += score_i
 
     score /= num_candidates
     return score

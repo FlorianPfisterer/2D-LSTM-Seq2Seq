@@ -32,7 +32,7 @@ sequence-to-sequence tasks such as neural machine translation.
 ### General Architecture
 A source sentence is read by a standard 1D bidirectional LSTM encoder using end-to-end trained embedding vectors.
 Its hidden states ![](https://timodenk.com/api/tex2img/h_0%2C%20%5Cdots%2C%20h_n?format=svg)
-(concatenating both directions)are then used as the inputs in the horizontal dimension of the 2d-LSTM.
+(concatenating both directions)are then used as the inputs in the horizontal dimension of the 2D-LSTM.
 
 Vertically, the autoregressively generated (embedded) tokens (targets in training mode)
 ![](https://timodenk.com/api/tex2img/y_0%2C%20%5Cdots%2C%20y_m?format=svg) of the respective previous row 
@@ -114,7 +114,7 @@ If you have ideas on how to improve or extend this code or you have spotted a pr
 or contact me (see below).
 
 ## Author
-I'm Florian Pfisterer. [Email me](florian.pfisterer1@gmail.com) or reach out on
+I'm Florian Pfisterer. [Email me](mailto:florian.pfisterer1@gmail.com) or reach out on
 Twitter [@FlorianPfi](https://twitter.com/@FlorianPfi).
 
 ## License
@@ -127,7 +127,7 @@ for his advice and support throughout this project.
 for her thorough response to my email questions about the details of [her paper](https://arxiv.org/abs/1810.03975).
 * Thanks to [Timo Denk](https://timodenk.com) for our inspiring paper discussions around the topic,
 his ideas and last but not least his awesome
-[LaTeX-2-Img API](https://tools.timodenk.com/tex-math-to-image-conversion)! 
+[TeX2Img API](https://tools.timodenk.com/tex-math-to-image-conversion)! 
 
 ## References
 [1] Voigtlander et al., 2016, "Handwriting Recognition with Large Multidimensional Long Short-Term Memory
