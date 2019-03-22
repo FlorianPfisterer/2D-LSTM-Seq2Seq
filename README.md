@@ -121,7 +121,7 @@ If you have ideas on how to improve or extend this code or you have spotted a pr
 or contact me (see below).
 
 ## Author
-I'm Florian Pfisterer. [Email me](mailto:florian.pfisterer1<at>gmail.com) or reach out on
+I'm Florian Pfisterer. [Email me](mailto:florian.pfisterer1@gmail.com) or reach out on
 Twitter [@FlorianPfi](https://twitter.com/@FlorianPfi).
 
 ## License
