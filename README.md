@@ -1,7 +1,7 @@
 # 2D-LSTM Seq2Seq Model
 This repository contains a PyTorch implementation of a 2D-LSTM model for sequence-to-sequence learning.
 
-It also contains code to apply the 2D-LSTM to neural machine translation (NMT) based on the paper
+In addition, it contains code to apply the 2D-LSTM to neural machine translation (NMT) based on the paper
 ["Towards two-dimensional sequence to sequence model in neural machine translation"](https://arxiv.org/abs/1810.03975)
 by Parnia Bahar, Christopher Brix and Hermann Ney.
 
@@ -12,6 +12,13 @@ Clone the project and make sure to install the dependencies listed in [`requirem
 If you use the included dataset helper functions for the small IWSLT14 deu-eng NMT dataset (taken from
 [harvardnlp/var-attn/data](https://github.com/harvardnlp/var-attn/tree/master/data)), it will automatically 
 preprocess the data into `.csv` files before the first run.
+
+I've successfully run all tests using:
+* [PyTorch](http://pytorch.org) `1.0.1.post2`
+* [torchtext](https://github.com/pytorch/text) `0.3.1` 
+* [NumPy](http://www.numpy.org) `1.16.2`
+* [pandas](https://pandas.pydata.org) `0.24.1`
+* [tensorboardX](https://github.com/lanpa/tensorboardX) `1.6`
 
 ### Running Scripts
 With the dependencies installed, you can run the scripts in the [`main/`](./main) folder. 
@@ -32,13 +39,13 @@ sequence-to-sequence tasks such as neural machine translation.
 ### General Architecture
 A source sentence is read by a standard 1D bidirectional LSTM encoder using end-to-end trained embedding vectors.
 Its hidden states ![](https://timodenk.com/api/tex2img/h_0%2C%20%5Cdots%2C%20h_n?format=svg)
-(concatenating both directions)are then used as the inputs in the horizontal dimension of the 2D-LSTM.
+(concatenating both directions) are then used as the inputs in the horizontal dimension of the 2D-LSTM.
 
 Vertically, the autoregressively generated (embedded) tokens (targets in training mode)
 ![](https://timodenk.com/api/tex2img/y_0%2C%20%5Cdots%2C%20y_m?format=svg) of the respective previous row 
 are given to the 2D cell.
 
-The hidden state of the cells in the last column are then fed into a fully-connected softmax layer which forms
+The hidden state of the cell in the last column is then fed into a fully-connected softmax layer which forms
 the prediction for the next output token.
 
 The basic idea is that the 2D-LSTM re-reads the input sentence for each new output token, conditioned on the 
@@ -70,16 +77,16 @@ The [train_iwslt14_small.py](./main/train_iwslt14_small.py) script contains code
 the small IWSLT14 deu-eng NMT dataset
 (taken from [harvardnlp/var-attn/data](https://github.com/harvardnlp/var-attn/tree/master/data)).
 
-The following command line arguments are supported:
+The following command line arguments are supported, with the given default values:
 * `--batch_size=32`: The batch size to use for training and inference.
-* `--epochs=200`: The number of epochs to train.
+* `--epochs=20`: The number of epochs to train.
 * `--shuffle=True`: Whether or not to shuffle the training examples.
 * `--lr=0.0005`: The learning rate to use.
 * `--embed_dim=128`: The dimension of the embedding vectors for both the source and target language.
 * `--encoder_state_dim=64`: The dimension of the bidirectional encoder LSTM states.
 * `--state_2d_dim=128`: The dimension of the 2D-LSTM hidden & cell states.
 * `--disable_cuda=False`: Disable CUDA (i.e. use the CPU for all computations).
-* `--dropout_p=0.2`: The dropout probability.
+* `--dropout_p=0.2`: The dropout probability, used after the embeddings and before the final softmax layer.
 
 ## Tests
 This repository contains test cases in the [`test/`](./test) folder that make sure the 2D-LSTM model 
@@ -114,18 +121,19 @@ If you have ideas on how to improve or extend this code or you have spotted a pr
 or contact me (see below).
 
 ## Author
-I'm Florian Pfisterer. [Email me](mailto:florian.pfisterer1@gmail.com) or reach out on
+I'm Florian Pfisterer. [Email me](mailto:florian.pfisterer1<at>gmail.com) or reach out on
 Twitter [@FlorianPfi](https://twitter.com/@FlorianPfi).
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE.md](./LICENSE.md) file for details.
 
 ## Acknowledgments
-* Thanks to [Ngoc Quan Pham](https://scholar.google.com/citations?hl=en&user=AzzJssIAAAAJ)
+I would like to thank:
+* [Ngoc Quan Pham](https://scholar.google.com/citations?hl=en&user=AzzJssIAAAAJ)
 for his advice and support throughout this project. 
-* Thanks to [Parnia Bahar](https://scholar.google.com/citations?user=eyc24McAAAAJ&hl=en)
+* [Parnia Bahar](https://scholar.google.com/citations?user=eyc24McAAAAJ&hl=en)
 for her thorough response to my email questions about the details of [her paper](https://arxiv.org/abs/1810.03975).
-* Thanks to [Timo Denk](https://timodenk.com) for our inspiring paper discussions around the topic,
+* [Timo Denk](https://timodenk.com) for our inspiring paper discussions around the topic,
 his ideas and last but not least his awesome
 [TeX2Img API](https://tools.timodenk.com/tex-math-to-image-conversion)! 
 
