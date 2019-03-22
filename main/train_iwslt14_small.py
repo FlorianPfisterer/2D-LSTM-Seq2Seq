@@ -1,12 +1,11 @@
 from data.iwslt14_small.dataset_utils import create_dataset, BOS_TOKEN, EOS_TOKEN, PAD_TOKEN
 from model.lstm2d import LSTM2d
+from util.checkpoint_utils import save_checkpoint
 from data.data_utils import get_bucket_iterator
-from torchtext.data import Iterator
 import argparse
 import torch
 import numpy as np
 import os
-import itertools
 from tensorboardX import SummaryWriter
 from datetime import datetime
 
@@ -17,7 +16,7 @@ CHECKPOINT_DIR = ROOT_DIR + '/checkpoints'
 parser = argparse.ArgumentParser(description='train_iwslt14_small.py')
 parser.add_argument('--batch_size', type=int, default=32,
                     help='The batch size to use for training and inference.')
-parser.add_argument('--epochs', type=int, default=200,
+parser.add_argument('--epochs', type=int, default=20,
                     help='The number of epochs to train.')
 parser.add_argument('--shuffle', type=bool, default=True,
                     help='Whether or not to shuffle the training examples.')
@@ -34,6 +33,8 @@ parser.add_argument('--disable_cuda', default=False, action='store_true',
 parser.add_argument('--dropout_p', type=float, default=0.2,
                     help='The dropout probability.')
 options = parser.parse_args()
+
+# determine the device (CPU or GPU)
 options.device = None
 if not options.disable_cuda and torch.cuda.is_available():
     options.device = torch.device('cuda')
@@ -41,7 +42,10 @@ else:
     options.device = torch.device('cpu')
 print('Using device: {}'.format(options.device))
 
-experiment_name = 'b{}_p{}_{}'.format(options.batch_size, options.dropout_p, datetime.now())
+# create a summary writer
+experiment_name = 'b{}_lr{}_emb{}_encstate{}_2dstate{}_drop-p{}_@{}'\
+    .format(options.batch_size, options.lr, options.embed_dim, options.encoder_state_dim,
+            options.state_2d_dim, options.dropout_p, datetime.now())
 writer = SummaryWriter(log_dir='runs/{}'.format(experiment_name))
 
 
@@ -72,15 +76,19 @@ def main():
 
     batches_per_epoch = len(dataset.train.examples) // options.batch_size
     val_loss_history = []
-
+    global_step = 0
     for epoch in range(options.epochs):
         print('Starting epoch #{}'.format(epoch + 1))
 
-        writer.add_histogram('input_embeddings', model.input_embedding.weight.data, epoch * batches_per_epoch)
-        writer.add_histogram('output_embeddings', model.output_embedding.weight.data, epoch * batches_per_epoch)
+        writer.add_histogram('input_embeddings', model.input_embedding.weight.data, global_step)
+        writer.add_histogram('output_embeddings', model.output_embedding.weight.data, global_step)
+
+        if model.input_embedding.weight.grad is not None and model.output_embedding.weight.grad is not None:
+            writer.add_histogram('input_embeddings/gradient', model.input_embedding.weight.grad, global_step)
+            writer.add_histogram('output_embeddings/gradient', model.output_embedding.weight.grad, global_step)
 
         if epoch > 0 and not epoch % 5:
-            save_checkpoint(model, optimizer, epoch)
+            save_checkpoint(model, optimizer, epoch, options)
             model.eval()
             test_model(model, dataset)
 
@@ -109,19 +117,12 @@ def main():
 
         # calculate loss metrics
         train_loss = np.mean(loss_history)
-        model.eval()
         val_loss = validate_model(model, dataset)
         val_loss_history.append(val_loss)
 
         global_step = (epoch+1)*batches_per_epoch
         writer.add_scalar('train_loss', train_loss, global_step)
         writer.add_scalar('val_loss', val_loss, global_step)
-
-        # early stopping
-        if epoch >= 5 and val_loss > val_loss_history[-2] > val_loss_history[-3] > val_loss_history[-4]:
-            print('Early-stopping criterion is met!')
-            save_checkpoint(model, optimizer, epoch)
-            break
 
     finalize()
 
@@ -148,72 +149,20 @@ def validate_model(model, dataset):
     val_iterator = get_bucket_iterator(dataset.val, batch_size=options.batch_size, shuffle=False)
     loss_history = []
 
+    model.train()   # use teacher forcing in validation mode too
+
     for i, batch in enumerate(val_iterator):
         x, x_lengths = batch.src
         y = batch.tgt
         x_lengths[x_lengths <= 0] = 1
 
-        y_pred = model.forward(x=x, x_lengths=x_lengths)
+        y_pred = model.forward(x=x, x_lengths=x_lengths, y=y)
         loss_value = model.padded_loss(y_pred, y)
         loss_history.append(loss_value.item())
 
     avg_loss = np.mean(loss_history)
     print("Average loss on validation dataset: {}".format(avg_loss))
     return avg_loss
-
-
-def export_predictions(model, dataset, file_name):
-    print("Exporting validation set predictions to {}".format(file_name))
-    pad_token = dataset.tgt.vocab.stoi[PAD_TOKEN]
-
-    # must be batch_size=1 to preserve the order while also ensuring the lengths are sorted (required by PyTorch)
-    iterator = Iterator(dataset.val, batch_size=1, train=False, sort=False)
-    iterator.init_epoch()
-    model.eval()
-
-    with open(file_name, 'a') as predictions_file:
-        for batch in iterator:
-            x, x_lengths = batch.src
-            x_lengths[x_lengths <= 0] = 1  # crashes for values <= 0 (seems to be a bug)
-
-            y_pred = model.forward(x, x_lengths)    # output_seq_len x (batch=1) x output_vocab_size
-            y_argmax = torch.argmax(y_pred, dim=-1).view(-1)
-
-            unpadded_idxs = itertools.takewhile(lambda idx: idx != pad_token, y_argmax)
-            prediction_sentence = ' '.join(map(lambda idx: dataset.tgt.vocab.itos[idx], unpadded_idxs))
-
-            predictions_file.write(prediction_sentence + '\n')
-
-
-def save_checkpoint(model, optimizer, epoch: int):
-    if not os.path.exists(CHECKPOINT_DIR):
-        os.mkdir(CHECKPOINT_DIR)
-
-    path = __get_checkpoint_path(model, epoch)
-    checkpoint = {
-        'model': model.state_dict(),
-        'optimizer': optimizer.state_dict()
-    }
-    torch.save(checkpoint, path)
-
-    print('Saved checkpoint for \'{}\' at epoch #{}'.format(model.name, epoch))
-
-
-def restore_from_checkpoint(model, optimizer, epoch: int):
-    path = __get_checkpoint_path(model, epoch)
-    if torch.cuda.is_available():
-        checkpoint = torch.load(path)
-    else:
-        checkpoint = torch.load(path, map_location='cpu')
-    model.load_state_dict(checkpoint['model'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
-
-    print('Restored checkpoint for \'{}\' at epoch #{}'.format(model.name, epoch))
-
-
-def __get_checkpoint_path(model, epoch):
-    return os.path.join(CHECKPOINT_DIR, '{}_epoch_{}_b{}_p{}.pt'.format(model.name, epoch, options.batch_size,
-                                                                        options.dropout_p))
 
 
 if __name__ == '__main__':
