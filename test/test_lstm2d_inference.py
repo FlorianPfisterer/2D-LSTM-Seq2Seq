@@ -35,7 +35,7 @@ class LSTM2dInferenceTest(TestCase):
 
         # toy inference
         self.lstm.eval()
-        pred = self.lstm.forward(x=sample_x, x_lengths=x_lengths)
+        pred = self.lstm.predict(x=sample_x, x_lengths=x_lengths)
 
         pred_shape = list(pred.shape)
         output_seq_len = pred_shape[0]  # this depends on the model parameters (when it predicts '<eos>')
@@ -51,7 +51,7 @@ class LSTM2dInferenceTest(TestCase):
         x_lengths = torch.tensor([4] * self.batch_size, dtype=torch.long)
 
         self.lstm.eval()
-        pred = self.lstm.forward(x=batch_x, x_lengths=x_lengths)     # shape (output_seq_len x batch_size x vocab_size)
+        pred = self.lstm.predict(x=batch_x, x_lengths=x_lengths)     # shape (output_seq_len x batch_size x vocab_size)
 
         pred_first = pred[:, 0, :]
         output_seq_len = list(pred_first.shape)[0]

@@ -59,24 +59,24 @@ class LSTM2d(nn.Module):
         # final output layer for next predicted token
         self.logits_dropout = nn.Dropout(p=dropout_p)
         self.logits = nn.Linear(in_features=state_dim_2d, out_features=output_vocab_size).to(self.device)
-        self.loss_function = torch.nn.CrossEntropyLoss(ignore_index=pad_token).to(self.device)
+        self.loss_function = torch.nn.CrossEntropyLoss(ignore_index=pad_token, reduction='sum').to(self.device)
 
         # the encoder LSTM goes over the input sequence x and provides the hidden states h_j for the 2d-LSTM
         self.encoder = nn.LSTM(input_size=embed_dim, hidden_size=encoder_state_dim, bidirectional=True).to(self.device)
 
-    def forward(self, x, x_lengths, y=None):
+    def forward(self, x, x_lengths, y):
         """
-        Runs the complete forward propagation for the 2d-LSTM, using two different implementations for training
-        and inference.
+        Runs the complete forward propagation for the 2d-LSTM with known target tokens (i.e. using teacher forcing) in
+        an O(input_seq_len + output_seq_len) algorithm.
+
         Args:
             x: (input_seq_len x batch) input tokens (indices in range [0, input_vocab_size))
             x_lengths: (batch) lengths of the input sequences, used for masking
-            y (only if training): (output_seq_len x batch) correct output tokens
-                                  (indices in range [0, output_vocab_size))
+            y: (output_seq_len x batch) correct output tokens (indices in range [0, output_vocab_size))
 
         Note:
             - it is assumed that the last token of the input (x) is an <EOS> token
-            - it is assumed that in training mode the last token of the targets (y) is an <EOS> token
+            - it is assumed that the last token of the targets (y) is an <EOS> token
 
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size)
@@ -84,59 +84,18 @@ class LSTM2d(nn.Module):
         """
         x = x.to(self.device)
         x_lengths = x_lengths.to(self.device)
+        y = y.to(self.device)
 
+        # run the inputs through the bidirectional encoder LSTM and use the hidden states for further processing
         h = self.__encoder_lstm(x, x_lengths)
-
-        if self.training:
-            assert y is not None, 'You must supply the correct tokens in training mode.'
-            y = y.to(self.device)
-            return self.__training_forward(h=h, h_lengths=x_lengths, y=y)
-        else:
-            return self.__inference_forward(h=h, h_lengths=x_lengths)
-
-    def loss(self, y_pred, y_target):
-        """
-        Returns the cross entropy loss value for the given predictions and targets, ignoring <pad>-targets.
-        Args:
-            y_pred: (output_seq_len x batch x output_vocab_size) predicted output sequence (float logits)
-            y_target: (output_seq_len x batch) target output tokens (long indices into output_vocab_size)
-
-        Returns: () scalar-tensor representing the cross-entropy loss between y_pred and y_target
-        """
-        y_pred = y_pred.to(self.device)
-        y_target = y_target.to(self.device)
-        return self.loss_function(y_pred.view(-1, self.output_vocab_size), y_target.view(-1))
-
-    def padded_loss(self, y_pred, y_target):
-        """
-        Returns the cross entropy loss value for the given predictions and targets, ignoring <pad>-targets,
-        and expanding the prediction
-        Args:
-            y_pred: (predicted_seq_len x batch x output_vocab_size) predicted output sequence (float logits)
-            y_target: (target_seq_len x batch) target output tokens (long indices into output_vocab_size)
-
-        Returns: () scalar-tensor representing the cross-entropy loss between y_pred and y_target
-        """
-        y_pred = y_pred.to(self.device)
-        y_target = y_target.to(self.device)
-
-        predicted_seq_len = y_pred.size()[0]
-        target_seq_len, batch = y_target.size()
-        diff = predicted_seq_len - target_seq_len
-        if diff > 0:      # pad the target
-            padding = torch.ones(diff, batch, dtype=y_target.dtype, device=self.device) * self.pad_token
-            y_target = torch.cat([y_target, padding], dim=0)
-        elif diff < 0:    # pad the prediction
-            padding = torch.zeros(abs(diff), batch, self.output_vocab_size, dtype=y_pred.dtype, device=self.device)
-            y_pred = torch.cat([y_pred, padding], dim=0)
-        return self.loss(y_pred, y_target)
+        return self.__training_forward(h=h, h_lengths=x_lengths, y=y)
 
     def __training_forward(self, h, h_lengths, y):
         """
         Optimized implementation of the 2D-LSTM forward pass at training time, where the correct tokens y are known in
         advance.
         Processes the input in a diagonal-wise fashion, as described in the paper
-            Handwriting Recognition with Large Multtidimensional Long Short-Term Memory Recurrent Neural Networks
+            Handwriting Recognition with Large Multidimensional Long Short-Term Memory Recurrent Neural Networks
             by Voigtlaender et. al.
 
         Args:
@@ -213,19 +172,67 @@ class LSTM2d(nn.Module):
         y_pred = self.logits.forward(states_for_pred)   # shape (output_seq_len x batch x output_vocab_size)
         return y_pred
 
-    def __inference_forward(self, h, h_lengths):
+    def loss(self, y_pred, y_target):
         """
-        Naive O(input_seq_len * output_seq_len) implementation of the 2D-LSTM forward pass at inference time.
+        Returns the cross entropy loss value for the given predictions and targets, ignoring <pad>-targets.
+        Args:
+            y_pred: (output_seq_len x batch x output_vocab_size) predicted output sequence (float logits)
+            y_target: (output_seq_len x batch) target output tokens (long indices into output_vocab_size)
+
+        Returns: () scalar-tensor representing the cross-entropy loss between y_pred and y_target
+        """
+        y_pred = y_pred.to(self.device)
+        y_target = y_target.to(self.device)
+        return self.loss_function(y_pred.view(-1, self.output_vocab_size), y_target.view(-1))
+
+    def padded_loss(self, y_pred, y_target):
+        """
+        Returns the cross entropy loss value for the given predictions and targets, ignoring <pad>-targets,
+        and expanding the prediction
+        Args:
+            y_pred: (predicted_seq_len x batch x output_vocab_size) predicted output sequence (float logits)
+            y_target: (target_seq_len x batch) target output tokens (long indices into output_vocab_size)
+
+        Returns: () scalar-tensor representing the cross-entropy loss between y_pred and y_target
+        """
+        y_pred = y_pred.to(self.device)
+        y_target = y_target.to(self.device)
+
+        predicted_seq_len = y_pred.size()[0]
+        target_seq_len, batch = y_target.size()
+        diff = predicted_seq_len - target_seq_len
+        if diff > 0:      # pad the target
+            padding = torch.ones(diff, batch, dtype=y_target.dtype, device=self.device) * self.pad_token
+            y_target = torch.cat([y_target, padding], dim=0)
+        elif diff < 0:    # pad the prediction
+            padding = torch.zeros(abs(diff), batch, self.output_vocab_size, dtype=y_pred.dtype, device=self.device)
+            y_pred = torch.cat([y_pred, padding], dim=0)
+        return self.loss(y_pred, y_target)
+
+    def predict(self, x, x_lengths):
+        """
+        Runs the complete forward propagation for the 2d-LSTM with unknown target tokens (inference), in
+        an O(input_seq_len * output_seq_len) algorithm.
 
         Args:
-            h: (input_seq_len x batch x 2*encoder_state_dim) hidden states of bidirectional encoder LSTM
-            h_lengths: (batch) lengths of the input sequences, used for masking
+            x: (input_seq_len x batch) input tokens (indices in range [0, input_vocab_size))
+            x_lengths: (batch) lengths of the input sequences, used for masking
+
+        Note:
+            - it is assumed that the last token of the input (x) is an <EOS> token
 
         Returns:
             y_pred: (output_seq_len x batch x output_vocab_size) predictions (logits) for the output sequence,
              where output_seq_len <= max_output_len (depending on when the model predicts <eos> for each sequence),
              zero-padded for sequences in the batch that were <eos>-ed by the model before iteration # output_seq_len
         """
+        x = x.to(self.device)
+        x_lengths = x_lengths.to(self.device)
+
+        # run the inputs through the bidirectional encoder LSTM and use the hidden states for further processing
+        h = self.__encoder_lstm(x, x_lengths)
+        h_lengths = x_lengths
+
         batch_size = h.size()[1]
         input_seq_len = h.size()[0]
 

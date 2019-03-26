@@ -62,13 +62,13 @@ class LSTM2dTrainVsInferenceTest(TestCase):
         Makes sure the predictions of the 2d-LSTM are the same in inference and training mode for the given inputs if
         the same target tokens are used.
         """
+        self.lstm.eval()
         # first run it in inference mode, then use the generated tokens as targets for training mode and
         # then compare the results
-        self.lstm.eval()
-        y_pred_inference = self.lstm.forward(x=x, x_lengths=x_lengths)  # (output_seq_len x batch x output_vocab_size)
+
+        y_pred_inference = self.lstm.predict(x=x, x_lengths=x_lengths)  # (output_seq_len x batch x output_vocab_size)
         y = torch.argmax(y_pred_inference, dim=-1)  # (output_seq_len x batch)
 
-        self.lstm.train()
         y_pred_train = self.lstm.forward(x=x, x_lengths=x_lengths, y=y)  # (output_seq_len x batch x output_vocab_size)
 
         self.assertTrue(torch.allclose(y_pred_inference, y_pred_train, atol=1e-04),
