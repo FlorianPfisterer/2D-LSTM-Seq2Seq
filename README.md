@@ -37,13 +37,13 @@ The method described in [[2]](https://arxiv.org/abs/1810.03975) is an approach t
 sequence-to-sequence tasks such as neural machine translation.
 
 ### General Architecture
-A source sentence is read by a standard 1D bidirectional LSTM encoder using end-to-end trained embedding vectors.
+A source sentence is read by a standard (i.e. 1D) bidirectional LSTM encoder using end-to-end trained embedding vectors.
 Its hidden states ![](https://timodenk.com/api/tex2img/h_0%2C%20%5Cdots%2C%20h_n?format=svg)
 (concatenating both directions) are then used as the inputs in the horizontal dimension of the 2D-LSTM.
 
-Vertically, the autoregressively generated (embedded) tokens (targets in training mode)
+Vertically, the generated (embedded) tokens 
 ![](https://timodenk.com/api/tex2img/y_0%2C%20%5Cdots%2C%20y_m?format=svg) of the respective previous row 
-are given to the 2D cell.
+are given to the 2D cell. In training mode, teacher forcing is used (i.e. the correct tokens are used).
 
 The hidden state of the cell in the last column is then fed into a fully-connected softmax layer which forms
 the prediction for the next output token.
@@ -64,13 +64,14 @@ In inference mode, the target tokens ![](https://timodenk.com/api/tex2img/y_0%2C
 are not known in advance. Thus, only the naive ![](https://timodenk.com/api/tex2img/%5Cmathcal%7BO%7D(mn)?format=svg)
 implementation of going through each row after the other is feasible.
 
-In training mode however, the target tokens _are_ known in advance. Thus, we can traverse the 2D-grid in an 
+In training mode however, the target tokens _are_ known in advance (and we use teacher forcing).
+Thus, we can traverse the 2D-grid in an 
 efficient ![](https://timodenk.com/api/tex2img/%5Cmathcal%7BO%7D(m%2Bn)?format=svg) diagonal-wise fashion 
 ([[1]](https://www.vision.rwth-aachen.de/media/papers/MDLSTM_final.pdf), [[2]](https://arxiv.org/abs/1810.03975)).
 
-To enable both training and inference yet make use of the possible parallelization in training  mode,
-the [2D-LSTM code](./model/lstm2d.py) contains two different implementations of the `forward()` function:
-one for training and another one for inference.
+To enable both training and inference yet make use of the possible parallelization in training mode,
+the [2D-LSTM code](./model/lstm2d.py) contains two different implementations of the forward propagation:
+one for training (`forward(x, x_lengths, y)`) and another one for inference (`predict(x, x_lengths)`).
 
 ## Running Training
 The [train_iwslt14_small.py](./main/train_iwslt14_small.py) script contains code to train a 2D-LSTM model on 
@@ -102,7 +103,7 @@ the outputs are the same for each example in the batch, if the same is true for 
 They can be found in [`test_lstm2d_cell.py`](test/test_lstm2d_cell.py). 
 
 ### 2D-LSTM Model Tests
-These tests have varied goals:
+These tests have varied purposes:
 * The tests in [`test_lstm2d_training.py`](test/test_lstm2d_training.py)
 and [`test_lstm2d_inference.py`](test/test_lstm2d_inference.py) make sure the input and output dimensions are as 
 expected in training and inference mode, respectively.
@@ -110,7 +111,7 @@ expected in training and inference mode, respectively.
 and inference forward propagation code by comparing the predictions in both modes to each other when the same 
 target tokens are used. This includes the handling of padding for batches that contain sequences of different lengths.
 * The tests in [`test_lstm2d_fit.py`](test/test_lstm2d_fit.py) make sure the 2D-LSTM can fit a small synthetic 
-dataset in a few iterations (sanity-check).
+dataset in a few iterations (to sanity-check it).
 
 ## Future Work
 This model currently does not use any attention mechanism. Future research might try removing the 2D-recurrence
@@ -125,7 +126,7 @@ I'm Florian Pfisterer. [Email me](mailto:florian.pfisterer1@gmail.com) or reach 
 Twitter [@FlorianPfi](https://twitter.com/@FlorianPfi).
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE.md](./LICENSE.md) file for details.
+This project is licensed under the MIT License - see [LICENSE.md](./LICENSE.md) for details.
 
 ## Acknowledgments
 I would like to thank:
@@ -135,7 +136,7 @@ for his advice and support throughout this project.
 for her thorough response to my email questions about the details of [her paper](https://arxiv.org/abs/1810.03975).
 * [Timo Denk](https://timodenk.com) for our inspiring paper discussions around the topic,
 his ideas and last but not least his awesome
-[TeX2Img API](https://tools.timodenk.com/tex-math-to-image-conversion)! 
+[TeX2Img API](https://tools.timodenk.com/tex-math-to-image-conversion) used in this README! 
 
 ## References
 [1] Voigtlander et al., 2016, "Handwriting Recognition with Large Multidimensional Long Short-Term Memory
