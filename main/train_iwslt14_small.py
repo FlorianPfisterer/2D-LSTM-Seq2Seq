@@ -89,7 +89,6 @@ def main():
 
         if epoch > 0 and not epoch % 5:
             save_checkpoint(model, optimizer, epoch, options)
-            model.eval()
             test_model(model, dataset)
 
         model.train()
@@ -133,6 +132,8 @@ def finalize():
 
 
 def test_model(model, dataset):
+    model.eval()
+
     example_sentence = 'Good morning , how are you ? <eos>'
     tokens = example_sentence.split(' ')
     x = torch.tensor([[dataset.src.vocab.stoi[w] for w in tokens]], dtype=torch.long).t()
@@ -149,8 +150,7 @@ def validate_model(model, dataset):
     val_iterator = get_bucket_iterator(dataset.val, batch_size=options.batch_size, shuffle=False)
     loss_history = []
 
-    model.train()   # use teacher forcing in validation mode too
-
+    model.eval()
     for i, batch in enumerate(val_iterator):
         x, x_lengths = batch.src
         y = batch.tgt
